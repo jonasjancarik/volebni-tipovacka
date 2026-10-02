@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import { parseCouncil, parseSenate } from "./results"
-import { compareScores, scoreTip, validateTip } from "./scoring"
+import { compareScores, expandShares, scoreTip, validateTip } from "./scoring"
 
 const fixture = (name: string) => readFileSync(`worker/fixtures/${name}`, "utf8")
 
@@ -50,18 +50,28 @@ describe("parseCouncil", () => {
 })
 
 describe("tips", () => {
-  it("rejects shares that do not add up to 100", () => {
-    expect(validateTip({ turnout: 40, shares: { 1: 50, 2: 40 } }, "kv", [1, 2])).toMatch(/100 %/)
+  it("rejects a fully filled tip that does not add up to 100", () => {
+    expect(validateTip({ turnout: 40, shares: { 1: 50, 2: 40 } }, "kv", [1, 2])).toMatch(/přesně 100 %/)
+  })
+
+  it("rejects shares above 100 in total and an empty tip", () => {
+    expect(validateTip({ turnout: 40, shares: { 1: 70, 2: 40 } }, "kv", [1, 2, 3])).toMatch(/víc než 100 %/)
+    expect(validateTip({ turnout: 40, shares: { 1: "" } }, "kv", [1, 2])).toMatch(/aspoň u jedné/)
+  })
+
+  it("splits the remainder equally among skipped options", () => {
+    expect(expandShares({ 1: 60, 2: 28 }, [1, 2, 3, 4, 5])).toEqual({ 1: 60, 2: 28, 3: 4, 4: 4, 5: 4 })
+    expect(expandShares({ 1: 100 }, [1, 2])).toEqual({ 1: 100, 2: 0 })
   })
 
   it("requires a Senate winner from the ballot", () => {
     expect(validateTip({ turnout: 40, shares: { 1: 50, 2: 50 }, winner: 9 }, "se", [1, 2])).toMatch(/senátorem/)
   })
 
-  it("treats missing lists as zero and rounds to one decimal", () => {
-    expect(validateTip({ turnout: "41.26", shares: { 1: 100 } }, "kv", [1, 2])).toEqual({
+  it("keeps only filled shares and rounds to one decimal", () => {
+    expect(validateTip({ turnout: "41.26", shares: { 1: 55.55, 2: "" } }, "kv", [1, 2, 3])).toEqual({
       turnout: 41.3,
-      shares: { 1: 100, 2: 0 },
+      shares: { 1: 55.6 },
       winner: null,
     })
   })

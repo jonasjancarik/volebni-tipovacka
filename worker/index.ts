@@ -1,7 +1,7 @@
 import { Hono } from "hono"
 import { deleteCookie, getCookie, setCookie } from "hono/cookie"
 import { importResults } from "./results"
-import { compareScores, scoreTip, validateTip, type Shares, type TipInput } from "./scoring"
+import { compareScores, expandShares, scoreTip, validateTip, type Shares, type TipInput } from "./scoring"
 
 interface Env {
   DB: D1Database
@@ -151,7 +151,13 @@ app.get("/races/:id", async (c) => {
   const hasResults = !open && (race.counted_pct ?? 0) > 0
 
   type TipRow = { user_id: number; nickname: string; turnout: number; shares: string; winner: number | null }
-  let myTip: TipInput | null = null
+  const nums = options.map((o) => o.num)
+  // Stored tips hold only the filled-in shares; `filled` lets the form show which ones those were.
+  const readTip = (row: { turnout: number; shares: string; winner: number | null }) => {
+    const filled = JSON.parse(row.shares) as Shares
+    return { turnout: row.turnout, shares: expandShares(filled, nums), winner: row.winner, filled: Object.keys(filled).map(Number) }
+  }
+  let myTip: ReturnType<typeof readTip> | null = null
   let tipCount: number
   let leaderboard: unknown[] | null = null
   let myRank: number | null = null
@@ -175,7 +181,7 @@ app.get("/races/:id", async (c) => {
     }
     const ranked = rows
       .map((row) => {
-        const tip = { turnout: row.turnout, shares: JSON.parse(row.shares) as Shares, winner: row.winner }
+        const tip = readTip(row)
         return { row, tip, score: scoreTip(tip, actual) }
       })
       .sort((a, b) => compareScores(a.score, b.score))
@@ -194,7 +200,7 @@ app.get("/races/:id", async (c) => {
         .prepare("SELECT turnout, shares, winner FROM tips WHERE user_id = ? AND race_id = ?")
         .bind(user.id, id)
         .first<{ turnout: number; shares: string; winner: number | null }>()
-      if (row) myTip = { turnout: row.turnout, shares: JSON.parse(row.shares), winner: row.winner }
+      if (row) myTip = readTip(row)
     }
   }
 

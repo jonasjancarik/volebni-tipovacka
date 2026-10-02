@@ -16,15 +16,22 @@ export function validateTip(
 ): TipInput | string {
   const raw = (body.shares ?? {}) as Record<string, unknown>
   if (typeof raw !== "object") return "Tip se nepodařilo přečíst."
+  // Only the shares the tipper actually filled in are kept; expandShares fills in the rest.
   const shares: Shares = {}
   let sum = 0
   for (const num of nums) {
-    const v = Number(raw[String(num)] ?? 0)
+    const given = raw[String(num)]
+    if (given == null || given === "") continue
+    const v = Number(given)
     if (!Number.isFinite(v) || v < 0 || v > 100) return "Každý výsledek musí být mezi 0 a 100 %."
     shares[String(num)] = round1(v)
     sum += shares[String(num)]
   }
-  if (Math.abs(sum - 100) > 0.05) return "Součet všech výsledků musí být přesně 100 %."
+  const filled = Object.keys(shares).length
+  if (filled === 0) return "Vyplňte odhad aspoň u jedné položky."
+  if (sum > 100.05) return "Součet výsledků nesmí být víc než 100 %."
+  if (filled === nums.length && Math.abs(sum - 100) > 0.05)
+    return "Když vyplníte všechny položky, musí součet dát přesně 100 %."
   const turnout = Number(body.turnout)
   if (body.turnout === "" || body.turnout == null || !Number.isFinite(turnout) || turnout < 0 || turnout > 100)
     return "Doplňte volební účast mezi 0 a 100 %."
@@ -34,6 +41,14 @@ export function validateTip(
     if (!nums.includes(winner)) return "Vyberte, kdo se podle vás stane senátorem."
   }
   return { turnout: round1(turnout), shares, winner }
+}
+
+/** Splits whatever the tipper left unassigned equally among the options they did not fill in. */
+export function expandShares(filled: Shares, nums: number[]): Shares {
+  const blanks = nums.filter((n) => !(String(n) in filled))
+  const assigned = Object.values(filled).reduce((a, b) => a + b, 0)
+  const each = blanks.length ? Math.max(0, 100 - assigned) / blanks.length : 0
+  return Object.fromEntries(nums.map((n) => [String(n), filled[String(n)] ?? each]))
 }
 
 export interface Scored {

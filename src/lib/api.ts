@@ -18,6 +18,8 @@ export interface Tip {
   turnout: number
   shares: Record<string, number>
   winner: number | null
+  /** Ballot numbers the tipper filled in; the other shares were split from the remainder. */
+  filled: number[]
 }
 
 export interface LeaderboardRow extends Tip {

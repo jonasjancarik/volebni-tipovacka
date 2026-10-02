@@ -15,8 +15,10 @@ export function Rules() {
           nakonec stane senátorem. V obou případech přidáte i svůj odhad volební účasti.
         </p>
         <p>
-          Procenta musí dohromady dát přesně 100. Listiny nebo kandidáty, které nevyplníte, počítáme jako 0 %.
-          Tipovat můžete v libovolném počtu obcí a obvodů.
+          Nemusíte vyplnit každou listinu nebo kandidáta. Stačí odhad u těch, na kterých vám záleží, a zbytek do
+          100 % se rovným dílem rozdělí mezi nevyplněné. Když například pěti listinám dáte dohromady 88 % a dalších
+          šest necháte prázdných, každá z nich dostane 2 %. Součet nesmí přesáhnout 100 %. Tipovat můžete
+          v libovolném počtu obcí a obvodů.
         </p>
       </section>
 

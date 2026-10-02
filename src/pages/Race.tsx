@@ -15,19 +15,45 @@ import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
 import { Progress } from "@/components/ui/progress"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { api, pct, tipsLabel, type RaceDetail } from "@/lib/api"
 
 const toNumber = (s: string) => Number(s.replace(",", ".").trim() || 0)
-const toInput = (n: number | undefined) => (n ? String(n).replace(".", ",") : "")
+const toInput = (n: number | undefined) => (n === undefined ? "" : String(n).replace(".", ","))
+const round1 = (n: number) => Math.round(n * 10) / 10
 
-function PercentInput(props: { id: string; value: string; onChange: (v: string) => void; invalid?: boolean }) {
+// Large enough that two tippers almost never get the same nickname, so uniqueness is not enforced.
+const ADJECTIVES = [
+  "Zvědavý", "Odvážný", "Tichý", "Veselý", "Bystrý", "Rozvážný", "Neúnavný", "Poctivý",
+  "Hloubavý", "Šťastný", "Trpělivý", "Mazaný", "Klidný", "Pilný", "Vytrvalý", "Důvtipný",
+  "Zamyšlený", "Rozverný", "Ostražitý", "Skromný", "Hbitý", "Laskavý", "Bdělý", "Upřímný",
+  "Nezdolný", "Vlídný", "Zvídavý", "Smělý", "Moudrý", "Čilý", "Hravý", "Rázný",
+  "Ospalý", "Pohotový", "Věrný", "Statečný", "Usměvavý", "Důkladný", "Svižný", "Pozorný",
+]
+const ANIMALS = [
+  "jezevec", "sokol", "kapr", "rys", "čáp", "bobr", "ježek", "výr",
+  "kamzík", "křeček", "datel", "zubr", "havran", "jelen", "ledňáček", "sysel",
+  "tetřev", "mlok", "plch", "krtek", "losos", "hranostaj", "kos", "dudek",
+  "svišť", "vlk", "medvěd", "čmelák", "strakapoud", "daněk", "muflon", "zajíc",
+  "jestřáb", "káně", "rorýs", "skřivan", "candát", "pstruh", "lumík", "netopýr",
+]
+const pick = (list: string[]) => list[Math.floor(Math.random() * list.length)]
+const randomNickname = () => `${pick(ADJECTIVES)} ${pick(ANIMALS)} ${Math.floor(Math.random() * 900) + 100}`
+
+function PercentInput(props: {
+  id: string
+  value: string
+  onChange: (v: string) => void
+  invalid?: boolean
+  placeholder?: string
+}) {
   return (
     <InputGroup className="w-28 shrink-0">
       <InputGroupInput
         id={props.id}
         inputMode="decimal"
-        placeholder="0"
+        placeholder={props.placeholder ?? "0"}
         className="text-right"
         value={props.value}
         aria-invalid={props.invalid || undefined}
@@ -45,22 +71,44 @@ function TipForm({ data, onSaved }: { data: RaceDetail; onSaved: () => void }) {
   const { race, options, myTip } = data
   const isSenate = race.kind === "se"
   const [shares, setShares] = useState<Record<number, string>>(() =>
-    Object.fromEntries(options.map((o) => [o.num, toInput(myTip?.shares[o.num])])),
+    Object.fromEntries(options.map((o) => [o.num, myTip?.filled.includes(o.num) ? toInput(myTip.shares[o.num]) : ""])),
   )
   const [turnout, setTurnout] = useState(toInput(myTip?.turnout))
   const [winner, setWinner] = useState(myTip?.winner ? String(myTip.winner) : "")
   const [email, setEmail] = useState("")
-  const [nickname, setNickname] = useState("")
+  const [nickname, setNickname] = useState(randomNickname)
+  const [sort, setSort] = useState<"num" | "name">("num")
   const [token, setToken] = useState("")
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
   const [sent, setSent] = useState<{ devLink?: string } | null>(null)
 
-  const values = options.map((o) => toNumber(shares[o.num] ?? ""))
+  const collator = new Intl.Collator("cs")
+  const shown = sort === "num" ? options : [...options].sort((a, b) => collator.compare(a.name, b.name))
+  const filled = options.filter((o) => (shares[o.num] ?? "").trim() !== "")
+  const values = filled.map((o) => toNumber(shares[o.num]))
   const invalidValue = values.some((v) => !Number.isFinite(v) || v > 100)
-  const sum = Math.round(values.reduce((a, b) => a + (Number.isFinite(b) ? b : 0), 0) * 10) / 10
-  const remaining = Math.round((100 - sum) * 10) / 10
-  const complete = !invalidValue && remaining === 0 && turnout.trim() !== "" && (!isSenate || winner !== "")
+  const sum = round1(values.reduce((a, b) => a + (Number.isFinite(b) ? b : 0), 0))
+  const remaining = round1(100 - sum)
+  const blanks = options.length - filled.length
+  // Whatever is left over is split equally among the fields the tipper skipped.
+  const each = blanks > 0 && remaining >= 0 ? remaining / blanks : 0
+  const sharesOk = !invalidValue && filled.length > 0 && remaining >= 0 && (blanks > 0 || remaining === 0)
+  const complete = sharesOk && turnout.trim() !== "" && (!isSenate || winner !== "")
+  const status =
+    filled.length === 0
+      ? `Vyplňte odhad aspoň u jednoho ${isSenate ? "kandidáta" : "z uskupení"}.`
+      : remaining < 0
+        ? `Rozdělili jste o ${pct(-remaining)} víc, než je 100 %.`
+        : blanks === 0
+          ? remaining === 0
+            ? "Rozděleno přesně 100 %."
+            : `Zbývá rozdělit ${pct(remaining)}.`
+          : remaining === 0
+            ? "Rozděleno přesně 100 %. Nevyplněné počítáme jako 0 %."
+            : blanks === 1
+              ? `Zbylých ${pct(remaining)} připadne na jedinou nevyplněnou položku.`
+              : `Zbylých ${pct(remaining)} rozdělíme rovným dílem mezi ${blanks} ${blanks < 5 ? "nevyplněné položky" : "nevyplněných položek"}, na každou vyjde ${pct(each, 2)}.`
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -70,7 +118,7 @@ function TipForm({ data, onSaved }: { data: RaceDetail; onSaved: () => void }) {
       const res = await api<{ saved?: boolean; devLink?: string }>("/tips", {
         body: {
           raceId: race.id,
-          shares: Object.fromEntries(options.map((o, i) => [o.num, values[i]])),
+          shares: Object.fromEntries(filled.map((o, i) => [o.num, values[i]])),
           turnout: toNumber(turnout),
           winner: isSenate ? Number(winner) : null,
           email,
@@ -114,8 +162,22 @@ function TipForm({ data, onSaved }: { data: RaceDetail; onSaved: () => void }) {
       <FieldGroup>
         <FieldSet>
           <FieldLegend>{isSenate ? "Kolik procent získají kandidáti v prvním kole" : "Kolik procent hlasů získají"}</FieldLegend>
+          <FieldDescription>
+            Nemusíte vyplňovat každého. Zadejte odhad tam, kde nějaký máte, a zbytek do 100 % rozdělíme rovným dílem
+            mezi ostatní. Kolik na ně vyjde, uvidíte šedě v prázdných polích.
+          </FieldDescription>
+          <ToggleGroup
+            variant="outline"
+            size="sm"
+            value={[sort]}
+            onValueChange={(v) => v[0] && setSort(v[0] as "num" | "name")}
+            aria-label="Řazení"
+          >
+            <ToggleGroupItem value="num">Podle volebního čísla</ToggleGroupItem>
+            <ToggleGroupItem value="name">Podle abecedy</ToggleGroupItem>
+          </ToggleGroup>
           <div className="flex flex-col divide-y">
-            {options.map((o) => (
+            {shown.map((o) => (
               <div key={o.num} className="flex items-center gap-3 py-2.5">
                 <Badge variant="outline" className="w-8 shrink-0 justify-center tabular-nums">
                   {o.num}
@@ -127,6 +189,7 @@ function TipForm({ data, onSaved }: { data: RaceDetail; onSaved: () => void }) {
                 <PercentInput
                   id={`share-${o.num}`}
                   value={shares[o.num] ?? ""}
+                  placeholder={sharesOk ? toInput(Math.round(each * 100) / 100) : "0"}
                   invalid={toNumber(shares[o.num] ?? "") > 100}
                   onChange={(v) => setShares((s) => ({ ...s, [o.num]: v }))}
                 />
@@ -136,11 +199,7 @@ function TipForm({ data, onSaved }: { data: RaceDetail; onSaved: () => void }) {
           <div className="sticky bottom-0 flex flex-col gap-2 border-t bg-background py-3">
             <Progress value={Math.min(sum, 100)} />
             <p className="text-sm" aria-live="polite">
-              {remaining === 0
-                ? "Rozděleno přesně 100 %."
-                : remaining > 0
-                  ? `Zbývá rozdělit ${pct(remaining)}.`
-                  : `Rozdělili jste o ${pct(-remaining)} víc, než je 100 %.`}
+              {status}
             </p>
           </div>
         </FieldSet>
@@ -173,7 +232,9 @@ function TipForm({ data, onSaved }: { data: RaceDetail; onSaved: () => void }) {
             <Field>
               <FieldLabel htmlFor="nickname">Přezdívka</FieldLabel>
               <Input id="nickname" required minLength={2} maxLength={30} value={nickname} onChange={(e) => setNickname(e.target.value)} />
-              <FieldDescription>Pod ní vás ostatní uvidí v pořadí tipujících.</FieldDescription>
+              <FieldDescription>
+                Pod ní vás ostatní uvidí v pořadí tipujících. Vymysleli jsme vám náhodnou, můžete si ji přepsat.
+              </FieldDescription>
             </Field>
             <Field>
               <FieldLabel htmlFor="email">E-mail</FieldLabel>
