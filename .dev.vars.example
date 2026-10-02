@@ -1,3 +1,4 @@
 # DEV_MODE=1 skips e-mail sending and returns the confirmation link in the API response.
 DEV_MODE=1
+EMAIL_HASH_KEY=local-development-key
 # TURNSTILE_SECRET=

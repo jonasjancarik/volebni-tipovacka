@@ -99,7 +99,7 @@ export function MyTips() {
             <FieldLabel htmlFor="nickname">Přezdívka</FieldLabel>
             <Input id="nickname" value={nickname} minLength={2} maxLength={30} onChange={(e) => setNickname(e.target.value)} />
             <FieldDescription>
-              Pod přezdívkou vás ostatní uvidí v pořadí tipujících. Přihlášeni jste jako {config.me.email}.
+              Pod přezdívkou vás ostatní uvidí v pořadí tipujících.
             </FieldDescription>
           </Field>
           <Button type="submit" variant="outline" className="self-start" disabled={nickname.trim() === config.me.nickname}>

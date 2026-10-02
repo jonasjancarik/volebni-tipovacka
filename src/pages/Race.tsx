@@ -179,7 +179,7 @@ function TipForm({ data, onSaved }: { data: RaceDetail; onSaved: () => void }) {
               <FieldLabel htmlFor="email">E-mail</FieldLabel>
               <Input id="email" type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
               <FieldDescription>
-                Pošleme vám odkaz, kterým tip potvrdíte. E-mail nikde nezobrazujeme a nikomu ho nepředáváme.
+                Pošleme vám odkaz, kterým tip potvrdíte. Adresu si neukládáme, jen její otisk, podle kterého vás příště poznáme.
               </FieldDescription>
             </Field>
             {config?.turnstileSiteKey && <Turnstile siteKey={config.turnstileSiteKey} onToken={setToken} />}
@@ -389,7 +389,7 @@ export function RacePage() {
                 <AlertDescription>Do uzávěrky ho můžete změnit.</AlertDescription>
               </Alert>
             )}
-            <TipForm key={`${data.race.id}-${config.me?.email ?? ""}`} data={data} onSaved={load} />
+            <TipForm key={`${data.race.id}-${config.me?.nickname ?? ""}`} data={data} onSaved={load} />
           </>
         ) : (
           <Results data={data} />

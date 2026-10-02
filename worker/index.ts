@@ -14,12 +14,14 @@ interface Env {
   MAIL_FROM: string
   TURNSTILE_SITE_KEY: string
   TURNSTILE_SECRET?: string
+  /** Secret key for hashing e-mail addresses; the addresses themselves are never stored. */
+  EMAIL_HASH_KEY: string
   DEV_MODE?: string
 }
 
 interface User {
   id: number
-  email: string
+  email_hash: string
   nickname: string
 }
 
@@ -46,6 +48,19 @@ const sha256 = async (text: string) => {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("")
 }
 
+const hashEmail = async (env: Env, email: string) => {
+  if (!env.EMAIL_HASH_KEY) throw new Error("EMAIL_HASH_KEY is not configured")
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(env.EMAIL_HASH_KEY),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  )
+  const mac = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(email))
+  return [...new Uint8Array(mac)].map((b) => b.toString(16).padStart(2, "0")).join("")
+}
+
 const randomToken = () => {
   const bytes = crypto.getRandomValues(new Uint8Array(32))
   return btoa(String.fromCharCode(...bytes)).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "")
@@ -66,7 +81,7 @@ app.use("*", async (c, next) => {
   const sid = getCookie(c, "sid")
   const user = sid
     ? await c.env.DB.prepare(
-        `SELECT u.id, u.email, u.nickname FROM sessions s JOIN users u ON u.id = s.user_id
+        `SELECT u.id, u.email_hash, u.nickname FROM sessions s JOIN users u ON u.id = s.user_id
          WHERE s.token_hash = ? AND s.expires_at > ?`,
       )
         .bind(await sha256(sid), new Date().toISOString())
@@ -87,7 +102,7 @@ app.get("/config", (c) => {
     deadline: c.env.DEADLINE,
     open: isOpen(c.env),
     turnstileSiteKey: c.env.TURNSTILE_SITE_KEY,
-    me: user && { email: user.email, nickname: user.nickname },
+    me: user && { nickname: user.nickname },
   })
 })
 
@@ -233,12 +248,13 @@ async function sendLink(
   const env = c.env
   const ip = c.req.header("cf-connecting-ip") ?? "local"
   const ipHash = await sha256(ip)
+  const emailHash = await hashEmail(env, email)
   const hourAgo = new Date(Date.now() - 3600_000).toISOString()
   const recent = await env.DB.prepare(
-    `SELECT SUM(email = ?1) AS by_email, SUM(ip_hash = ?2) AS by_ip FROM magic_links
-     WHERE created_at > ?3 AND (email = ?1 OR ip_hash = ?2)`,
+    `SELECT SUM(email_hash = ?1) AS by_email, SUM(ip_hash = ?2) AS by_ip FROM magic_links
+     WHERE created_at > ?3 AND (email_hash = ?1 OR ip_hash = ?2)`,
   )
-    .bind(email, ipHash, hourAgo)
+    .bind(emailHash, ipHash, hourAgo)
     .first<{ by_email: number | null; by_ip: number | null }>()
   if ((recent?.by_email ?? 0) >= 5 || (recent?.by_ip ?? 0) >= 30)
     return { error: "Poslali jsme vám už několik e-mailů. Zkuste to prosím znovu za hodinu." }
@@ -246,11 +262,11 @@ async function sendLink(
   const token = randomToken()
   const now = Date.now()
   await env.DB.prepare(
-    "INSERT INTO magic_links (token_hash, email, nickname, payload, ip_hash, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO magic_links (token_hash, email_hash, nickname, payload, ip_hash, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
   )
     .bind(
       await sha256(token),
-      email,
+      emailHash,
       nickname,
       payload && JSON.stringify(payload),
       ipHash,
@@ -324,7 +340,9 @@ app.post("/login", async (c) => {
   if (!(await verifyTurnstile(c.env, body.turnstileToken, c.req.header("cf-connecting-ip") ?? "")))
     return c.json({ error: "Nepodařilo se ověřit, že nejste robot. Zkuste to prosím znovu." }, 400)
   // Same answer whether or not the address has tips, so the form does not reveal who takes part.
-  const known = await c.env.DB.prepare("SELECT 1 FROM users WHERE email = ?").bind(email).first()
+  const known = await c.env.DB.prepare("SELECT 1 FROM users WHERE email_hash = ?")
+    .bind(await hashEmail(c.env, email))
+    .first()
   if (!known) return c.json({ emailSent: true })
   const sent = await sendLink(c, email, null, null)
   if (sent.error) return c.json({ error: sent.error }, 429)
@@ -335,17 +353,20 @@ app.get("/confirm", async (c) => {
   const db = c.env.DB
   const now = new Date().toISOString()
   const link = await db
-    .prepare("SELECT email, nickname, payload FROM magic_links WHERE token_hash = ? AND expires_at > ?")
+    .prepare("SELECT email_hash, nickname, payload FROM magic_links WHERE token_hash = ? AND expires_at > ?")
     .bind(await sha256(c.req.query("token") ?? ""), now)
-    .first<{ email: string; nickname: string | null; payload: string | null }>()
+    .first<{ email_hash: string; nickname: string | null; payload: string | null }>()
   if (!link) return c.redirect("/prihlaseni?odkaz=neplatny")
 
-  let user = await db.prepare("SELECT id, email, nickname FROM users WHERE email = ?").bind(link.email).first<User>()
+  let user = await db
+    .prepare("SELECT id, email_hash, nickname FROM users WHERE email_hash = ?")
+    .bind(link.email_hash)
+    .first<User>()
   if (!user) {
     if (!link.nickname) return c.redirect("/prihlaseni?odkaz=neplatny")
     user = (await db
-      .prepare("INSERT INTO users (email, nickname, created_at) VALUES (?, ?, ?) RETURNING id, email, nickname")
-      .bind(link.email, link.nickname, now)
+      .prepare("INSERT INTO users (email_hash, nickname, created_at) VALUES (?, ?, ?) RETURNING id, email_hash, nickname")
+      .bind(link.email_hash, link.nickname, now)
       .first<User>())!
   }
 
@@ -404,7 +425,7 @@ app.delete("/me", async (c) => {
   await c.env.DB.batch([
     c.env.DB.prepare("DELETE FROM tips WHERE user_id = ?").bind(user.id),
     c.env.DB.prepare("DELETE FROM sessions WHERE user_id = ?").bind(user.id),
-    c.env.DB.prepare("DELETE FROM magic_links WHERE email = ?").bind(user.email),
+    c.env.DB.prepare("DELETE FROM magic_links WHERE email_hash = ?").bind(user.email_hash),
     c.env.DB.prepare("DELETE FROM users WHERE id = ?").bind(user.id),
   ])
   deleteCookie(c, "sid", { path: "/" })

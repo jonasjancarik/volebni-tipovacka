@@ -2,7 +2,7 @@ export interface Config {
   deadline: string
   open: boolean
   turnstileSiteKey: string
-  me: { email: string; nickname: string } | null
+  me: { nickname: string } | null
 }
 
 export interface RaceSummary {
