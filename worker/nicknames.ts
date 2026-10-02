@@ -1,3 +1,4 @@
+// Every tipper gets a generated nickname; nobody types their own, so nothing needs moderating.
 // Large enough that two tippers almost never get the same nickname, so uniqueness is not enforced.
 // Nouns are all masculine so they agree with the adjectives; the longest combination fits the 30-character limit.
 const ADJECTIVES = [

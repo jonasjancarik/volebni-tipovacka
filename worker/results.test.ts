@@ -76,6 +76,11 @@ describe("tips", () => {
     })
   })
 
+  it("ignores anything in the request that is not a share for an option on the ballot", () => {
+    const body = { turnout: 40, shares: { 1: 60, 99: 40, __proto__: 5, note: "<script>" }, nickname: "Vlastní", winner: 7 }
+    expect(validateTip(body, "kv", [1, 2])).toEqual({ turnout: 40, shares: { 1: 60 }, winner: null })
+  })
+
   it("ranks by average error, then turnout", () => {
     const actual = { pcts: { 1: 60, 2: 40 }, turnout: 50, winner: null }
     const close = scoreTip({ shares: { 1: 58, 2: 42 }, turnout: 30, winner: null }, actual)

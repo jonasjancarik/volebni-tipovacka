@@ -47,7 +47,8 @@ export function Rules() {
       <section className="flex flex-col gap-2">
         <h2 className="font-heading text-lg font-semibold">Vaše údaje</h2>
         <p>
-          Ukládáme vaši přezdívku a tipy. E-mailovou adresu použijeme jen k odeslání odkazu, kterým tip potvrdíte
+          Ukládáme vaše tipy a přezdívku, kterou vám při prvním tipu náhodně přidělíme a kterou najdete
+          v potvrzovacím e-mailu. E-mailovou adresu použijeme jen k odeslání odkazu, kterým tip potvrdíte
           nebo se přihlásíte, a potom ji zahodíme. V databázi zůstává pouze její otisk, ze kterého adresu nejde
           zpětně přečíst a podle kterého vás při příštím přihlášení poznáme. Z toho plyne, že vám nemůžeme sami
           napsat, ani kdybyste vyhráli. Účet včetně všech tipů můžete kdykoli smazat na stránce Moje tipy.

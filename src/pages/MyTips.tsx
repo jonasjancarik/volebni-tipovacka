@@ -1,12 +1,9 @@
 import { useEffect, useState } from "react"
 import { Link, useNavigate } from "react-router"
-import { toast } from "sonner"
 
 import { useConfig } from "@/App"
 import { Button } from "@/components/ui/button"
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty"
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
-import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
 import { api, type RaceSummary } from "@/lib/api"
@@ -15,8 +12,6 @@ export function MyTips() {
   const { config, reload } = useConfig()
   const navigate = useNavigate()
   const [tips, setTips] = useState<RaceSummary[] | null>(null)
-  const [draft, setNickname] = useState<string | null>(null)
-  const nickname = draft ?? config?.me?.nickname ?? ""
 
   useEffect(() => {
     if (!config) return
@@ -26,17 +21,6 @@ export function MyTips() {
     }
     api<RaceSummary[]>("/me/tips").then(setTips).catch(() => setTips([]))
   }, [config, navigate])
-
-  const saveNickname = async (e: React.FormEvent) => {
-    e.preventDefault()
-    try {
-      await api("/me", { body: { nickname } })
-      toast.success("Přezdívka je změněná.")
-      reload()
-    } catch (err) {
-      toast.error((err as Error).message)
-    }
-  }
 
   const logout = async () => {
     await api("/logout", { method: "POST" })
@@ -94,18 +78,9 @@ export function MyTips() {
 
       <section className="flex flex-col gap-4">
         <h2 className="font-heading text-xl font-semibold">Účet</h2>
-        <form onSubmit={saveNickname} className="flex flex-col gap-3">
-          <Field>
-            <FieldLabel htmlFor="nickname">Přezdívka</FieldLabel>
-            <Input id="nickname" value={nickname} minLength={2} maxLength={30} onChange={(e) => setNickname(e.target.value)} />
-            <FieldDescription>
-              Pod přezdívkou vás ostatní uvidí v pořadí tipujících.
-            </FieldDescription>
-          </Field>
-          <Button type="submit" variant="outline" className="self-start" disabled={nickname.trim() === config.me.nickname}>
-            Uložit přezdívku
-          </Button>
-        </form>
+        <p>
+          V pořadí tipujících vystupujete jako <strong>{config.me.nickname}</strong>.
+        </p>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={logout}>
             Odhlásit se

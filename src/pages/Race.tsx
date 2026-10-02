@@ -18,7 +18,6 @@ import { Spinner } from "@/components/ui/spinner"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { api, pct, tipsLabel, type RaceDetail } from "@/lib/api"
-import { randomNickname } from "@/lib/nicknames"
 import { rescaleTo100 } from "@/lib/shares"
 import { cn } from "@/lib/utils"
 
@@ -75,7 +74,6 @@ function TipForm({ data, onSaved }: { data: RaceDetail; onSaved: () => void }) {
   const [turnout, setTurnout] = useState(toInput(myTip?.turnout))
   const [winner, setWinner] = useState(myTip?.winner ? String(myTip.winner) : "")
   const [email, setEmail] = useState("")
-  const [nickname, setNickname] = useState(randomNickname)
   const [sort, setSort] = useState<"num" | "name">("num")
   const [token, setToken] = useState("")
   const [busy, setBusy] = useState(false)
@@ -134,7 +132,6 @@ function TipForm({ data, onSaved }: { data: RaceDetail; onSaved: () => void }) {
           turnout: toNumber(turnout),
           winner: isSenate ? Number(winner) : null,
           email,
-          nickname,
           turnstileToken: token,
         },
       })
@@ -154,8 +151,8 @@ function TipForm({ data, onSaved }: { data: RaceDetail; onSaved: () => void }) {
       <Alert>
         <AlertTitle>Ještě tip potvrďte v e-mailu</AlertTitle>
         <AlertDescription>
-          Na adresu {email} jsme poslali odkaz. Tip začne platit, až na něj kliknete. Když e-mail nepřijde do pár
-          minut, podívejte se do spamu.
+          Na adresu {email} jsme poslali odkaz. Tip začne platit, až na něj kliknete. V e-mailu najdete i přezdívku,
+          pod kterou vás ostatní uvidí v pořadí. Když zpráva nepřijde do pár minut, podívejte se do spamu.
           {sent.devLink && (
             <>
               {" "}
@@ -257,13 +254,6 @@ function TipForm({ data, onSaved }: { data: RaceDetail; onSaved: () => void }) {
 
         {!config?.me && (
           <>
-            <Field>
-              <FieldLabel htmlFor="nickname">Přezdívka</FieldLabel>
-              <Input id="nickname" required minLength={2} maxLength={30} value={nickname} onChange={(e) => setNickname(e.target.value)} />
-              <FieldDescription>
-                Pod ní vás ostatní uvidí v pořadí tipujících. Vymysleli jsme vám náhodnou, můžete si ji přepsat.
-              </FieldDescription>
-            </Field>
             <Field>
               <FieldLabel htmlFor="email">E-mail</FieldLabel>
               <Input id="email" type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />

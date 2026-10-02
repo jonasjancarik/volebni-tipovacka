@@ -1,5 +1,6 @@
 import { Hono } from "hono"
 import { deleteCookie, getCookie, setCookie } from "hono/cookie"
+import { randomNickname } from "./nicknames"
 import { importResults } from "./results"
 import { compareScores, expandShares, scoreTip, validateTip, type Shares, type TipInput } from "./scoring"
 
@@ -71,10 +72,6 @@ const isOpen = (env: Env) => Date.now() < Date.parse(env.DEADLINE)
 const cleanEmail = (v: unknown) => {
   const email = String(v ?? "").trim().toLowerCase()
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && email.length <= 200 ? email : null
-}
-const cleanNickname = (v: unknown) => {
-  const nickname = String(v ?? "").trim().replace(/\s+/g, " ")
-  return nickname.length >= 2 && nickname.length <= 30 ? nickname : null
 }
 
 app.use("*", async (c, next) => {
@@ -248,7 +245,6 @@ async function verifyTurnstile(env: Env, token: unknown, ip: string) {
 async function sendLink(
   c: { env: Env; req: { url: string; header(name: string): string | undefined } },
   email: string,
-  nickname: string | null,
   payload: { raceId: string; raceName: string; tip: TipInput } | null,
 ): Promise<{ error?: string; devLink?: string }> {
   const env = c.env
@@ -264,6 +260,19 @@ async function sendLink(
     .first<{ by_email: number | null; by_ip: number | null }>()
   if ((recent?.by_email ?? 0) >= 5 || (recent?.by_ip ?? 0) >= 30)
     return { error: "Poslali jsme vám už několik e-mailů. Zkuste to prosím znovu za hodinu." }
+
+  // A returning tipper keeps their nickname. A new one gets a generated nickname, reused across
+  // their pending links so every e-mail they receive names the same one.
+  const known = await env.DB.prepare(
+    `SELECT nickname FROM users WHERE email_hash = ?1
+     UNION ALL
+     SELECT nickname FROM (SELECT nickname FROM magic_links
+       WHERE email_hash = ?1 AND nickname IS NOT NULL AND expires_at > ?2 ORDER BY created_at DESC LIMIT 1)
+     LIMIT 1`,
+  )
+    .bind(emailHash, new Date().toISOString())
+    .first<{ nickname: string }>()
+  const nickname = known?.nickname ?? randomNickname()
 
   const token = randomToken()
   const now = Date.now()
@@ -281,7 +290,9 @@ async function sendLink(
     )
     .run()
 
-  const link = `${new URL(c.req.url).origin}/api/confirm?token=${token}`
+  const origin = new URL(c.req.url).origin
+  const link = `${origin}/api/confirm?token=${token}`
+  const overview = `${origin}/moje-tipy`
   if (env.DEV_MODE === "1") {
     console.log(`Confirmation link for ${email}: ${link}`)
     return { devLink: link }
@@ -296,13 +307,21 @@ async function sendLink(
     `tímto odkazem můžete ${action}:`,
     link,
     ``,
-    `Odkaz platí ${LINK_HOURS} hodin. Pokud jste o něj nežádali, e-mail prostě ignorujte.`,
+    `V pořadí tipujících vystupujete pod přezdívkou ${nickname}.`,
+    ``,
+    `Přehled všech svých tipů najdete tady:`,
+    overview,
+    `Na jiném zařízení se k němu přihlásíte stejnou e-mailovou adresou.`,
+    ``,
+    `Odkaz na ${payload ? "potvrzení" : "přihlášení"} platí ${LINK_HOURS} hodin. Pokud jste o něj nežádali, e-mail prostě ignorujte.`,
     ``,
     `Volební tipovačka`,
   ].join("\n")
   const html = `<p>Dobrý den,</p><p>tímto odkazem můžete ${escapeHtml(action)}:</p>
 <p><a href="${link}">${payload ? "Potvrdit tip" : "Přihlásit se"}</a></p>
-<p>Odkaz platí ${LINK_HOURS} hodin. Pokud jste o něj nežádali, e-mail prostě ignorujte.</p><p>Volební tipovačka</p>`
+<p>V pořadí tipujících vystupujete pod přezdívkou <strong>${escapeHtml(nickname)}</strong>.</p>
+<p>Přehled všech svých tipů najdete na <a href="${overview}">${overview}</a>. Na jiném zařízení se k němu přihlásíte stejnou e-mailovou adresou.</p>
+<p>Odkaz na ${payload ? "potvrzení" : "přihlášení"} platí ${LINK_HOURS} hodin. Pokud jste o něj nežádali, e-mail prostě ignorujte.</p><p>Volební tipovačka</p>`
   await env.EMAIL.send({ to: email, from: { email: env.MAIL_FROM, name: "Volební tipovačka" }, subject, text, html })
   return {}
 }
@@ -330,11 +349,9 @@ app.post("/tips", async (c) => {
 
   const email = cleanEmail(body.email)
   if (!email) return c.json({ error: "Zadejte platnou e-mailovou adresu." }, 400)
-  const nickname = cleanNickname(body.nickname)
-  if (!nickname) return c.json({ error: "Zadejte přezdívku o 2 až 30 znacích." }, 400)
   if (!(await verifyTurnstile(c.env, body.turnstileToken, c.req.header("cf-connecting-ip") ?? "")))
     return c.json({ error: "Nepodařilo se ověřit, že nejste robot. Zkuste to prosím znovu." }, 400)
-  const sent = await sendLink(c, email, nickname, { raceId, raceName: race.name, tip })
+  const sent = await sendLink(c, email, { raceId, raceName: race.name, tip })
   if (sent.error) return c.json({ error: sent.error }, 429)
   return c.json({ emailSent: true, devLink: sent.devLink })
 })
@@ -350,7 +367,7 @@ app.post("/login", async (c) => {
     .bind(await hashEmail(c.env, email))
     .first()
   if (!known) return c.json({ emailSent: true })
-  const sent = await sendLink(c, email, null, null)
+  const sent = await sendLink(c, email, null)
   if (sent.error) return c.json({ error: sent.error }, 429)
   return c.json({ emailSent: true, devLink: sent.devLink })
 })
@@ -401,16 +418,6 @@ app.post("/logout", async (c) => {
   if (sid) await c.env.DB.prepare("DELETE FROM sessions WHERE token_hash = ?").bind(await sha256(sid)).run()
   deleteCookie(c, "sid", { path: "/" })
   return c.json({ ok: true })
-})
-
-app.post("/me", async (c) => {
-  const user = c.var.user
-  if (!user) return c.json({ error: "Nejste přihlášeni." }, 401)
-  const body = await c.req.json<Record<string, unknown>>().catch(() => ({}) as Record<string, unknown>)
-  const nickname = cleanNickname(body.nickname)
-  if (!nickname) return c.json({ error: "Zadejte přezdívku o 2 až 30 znacích." }, 400)
-  await c.env.DB.prepare("UPDATE users SET nickname = ? WHERE id = ?").bind(nickname, user.id).run()
-  return c.json({ nickname })
 })
 
 app.get("/me/tips", async (c) => {
