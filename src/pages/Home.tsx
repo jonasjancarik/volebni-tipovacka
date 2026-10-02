@@ -32,7 +32,9 @@ export function Home() {
   const [senate, setSenate] = useState<RaceSummary[] | null>(null)
 
   useEffect(() => {
-    api<RaceSummary[]>("/senate").then(setSenate).catch(() => setSenate([]))
+    api<RaceSummary[]>("/senate")
+      .then(setSenate)
+      .catch(() => setSenate([]))
   }, [])
 
   useEffect(() => {
@@ -42,7 +44,7 @@ export function Home() {
           .then(setCouncils)
           .catch(() => setCouncils([]))
       },
-      query ? 200 : 0,
+      query ? 200 : 0
     )
     return () => clearTimeout(timer)
   }, [query])
@@ -52,9 +54,7 @@ export function Home() {
   return (
     <>
       <section className="flex flex-col gap-3 pt-6">
-        <h1 className="font-heading text-3xl font-semibold tracking-tight sm:text-4xl">
-          Jak dopadnou volby u vás?
-        </h1>
+        <h1 className="font-heading text-3xl font-semibold tracking-tight sm:text-4xl">Jak dopadnou volby u vás?</h1>
         <p className="text-lg text-muted-foreground">
           Tipněte si výsledek komunálních voleb ve své obci nebo senátních voleb ve svém obvodu. Po sečtení hlasů
           uvidíte, jak blízko jste byli a kdo tipoval nejlépe.

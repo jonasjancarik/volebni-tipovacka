@@ -56,7 +56,7 @@ const hashEmail = async (env: Env, email: string) => {
     new TextEncoder().encode(env.EMAIL_HASH_KEY),
     { name: "HMAC", hash: "SHA-256" },
     false,
-    ["sign"],
+    ["sign"]
   )
   const mac = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(email))
   return [...new Uint8Array(mac)].map((b) => b.toString(16).padStart(2, "0")).join("")
@@ -64,13 +64,18 @@ const hashEmail = async (env: Env, email: string) => {
 
 const randomToken = () => {
   const bytes = crypto.getRandomValues(new Uint8Array(32))
-  return btoa(String.fromCharCode(...bytes)).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "")
+  return btoa(String.fromCharCode(...bytes))
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replaceAll("=", "")
 }
 
 const normalize = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().trim()
 const isOpen = (env: Env) => Date.now() < Date.parse(env.DEADLINE)
 const cleanEmail = (v: unknown) => {
-  const email = String(v ?? "").trim().toLowerCase()
+  const email = String(v ?? "")
+    .trim()
+    .toLowerCase()
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && email.length <= 200 ? email : null
 }
 
@@ -79,7 +84,7 @@ app.use("*", async (c, next) => {
   const user = sid
     ? await c.env.DB.prepare(
         `SELECT u.id, u.email_hash, u.nickname FROM sessions s JOIN users u ON u.id = s.user_id
-         WHERE s.token_hash = ? AND s.expires_at > ?`,
+         WHERE s.token_hash = ? AND s.expires_at > ?`
       )
         .bind(await sha256(sid), new Date().toISOString())
         .first<User>()
@@ -112,13 +117,15 @@ app.get("/races", async (c) => {
   const q = normalize(c.req.query("q") ?? "")
   if (q.length < 2) {
     // Nothing typed yet: offer the largest cities.
-    const { results } = await c.env.DB.prepare(`${RACE_LIST} WHERE r.kind = 'kv' ORDER BY r.population DESC LIMIT 12`).all()
+    const { results } = await c.env.DB.prepare(
+      `${RACE_LIST} WHERE r.kind = 'kv' ORDER BY r.population DESC LIMIT 12`
+    ).all()
     return c.json(results)
   }
   const like = q.replace(/[%_\\]/g, "\\$&")
   const { results } = await c.env.DB.prepare(
     `${RACE_LIST} WHERE r.kind = 'kv' AND r.search LIKE ? ESCAPE '\\'
-     ORDER BY r.search = ? DESC, r.search LIKE ? ESCAPE '\\' DESC, r.population DESC LIMIT 30`,
+     ORDER BY r.search = ? DESC, r.search LIKE ? ESCAPE '\\' DESC, r.population DESC LIMIT 30`
   )
     .bind(`%${like}%`, q, `${like}%`)
     .all()
@@ -152,7 +159,12 @@ app.get("/races/:id", async (c) => {
   // Stored tips hold only the filled-in shares; `filled` lets the form show which ones those were.
   const readTip = (row: { turnout: number; shares: string; winner: number | null }) => {
     const filled = JSON.parse(row.shares) as Shares
-    return { turnout: row.turnout, shares: expandShares(filled, nums), winner: row.winner, filled: Object.keys(filled).map(Number) }
+    return {
+      turnout: row.turnout,
+      shares: expandShares(filled, nums),
+      winner: row.winner,
+      filled: Object.keys(filled).map(Number),
+    }
   }
   let myTip: ReturnType<typeof readTip> | null = null
   let tipCount: number
@@ -165,7 +177,7 @@ app.get("/races/:id", async (c) => {
       await db
         .prepare(
           `SELECT t.user_id, u.nickname, t.turnout, t.shares, t.winner
-           FROM tips t JOIN users u ON u.id = t.user_id WHERE t.race_id = ?`,
+           FROM tips t JOIN users u ON u.id = t.user_id WHERE t.race_id = ?`
         )
         .bind(id)
         .all<TipRow>()
@@ -226,7 +238,7 @@ async function saveTip(db: D1Database, userId: number, raceId: string, tip: TipI
     .prepare(
       `INSERT INTO tips (user_id, race_id, turnout, shares, winner, updated_at) VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT (user_id, race_id) DO UPDATE SET
-         turnout = excluded.turnout, shares = excluded.shares, winner = excluded.winner, updated_at = excluded.updated_at`,
+         turnout = excluded.turnout, shares = excluded.shares, winner = excluded.winner, updated_at = excluded.updated_at`
     )
     .bind(userId, raceId, tip.turnout, JSON.stringify(tip.shares), tip.winner, new Date().toISOString())
     .run()
@@ -245,7 +257,7 @@ async function verifyTurnstile(env: Env, token: unknown, ip: string) {
 async function sendLink(
   c: { env: Env; req: { url: string; header(name: string): string | undefined } },
   email: string,
-  payload: { raceId: string; raceName: string; tip: TipInput } | null,
+  payload: { raceId: string; raceName: string; tip: TipInput } | null
 ): Promise<{ error?: string; devLink?: string }> {
   const env = c.env
   const ip = c.req.header("cf-connecting-ip") ?? "local"
@@ -254,7 +266,7 @@ async function sendLink(
   const hourAgo = new Date(Date.now() - 3600_000).toISOString()
   const recent = await env.DB.prepare(
     `SELECT SUM(email_hash = ?1) AS by_email, SUM(ip_hash = ?2) AS by_ip FROM magic_links
-     WHERE created_at > ?3 AND (email_hash = ?1 OR ip_hash = ?2)`,
+     WHERE created_at > ?3 AND (email_hash = ?1 OR ip_hash = ?2)`
   )
     .bind(emailHash, ipHash, hourAgo)
     .first<{ by_email: number | null; by_ip: number | null }>()
@@ -268,7 +280,7 @@ async function sendLink(
      UNION ALL
      SELECT nickname FROM (SELECT nickname FROM magic_links
        WHERE email_hash = ?1 AND nickname IS NOT NULL AND expires_at > ?2 ORDER BY created_at DESC LIMIT 1)
-     LIMIT 1`,
+     LIMIT 1`
   )
     .bind(emailHash, new Date().toISOString())
     .first<{ nickname: string }>()
@@ -277,7 +289,7 @@ async function sendLink(
   const token = randomToken()
   const now = Date.now()
   await env.DB.prepare(
-    "INSERT INTO magic_links (token_hash, email_hash, nickname, payload, ip_hash, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO magic_links (token_hash, email_hash, nickname, payload, ip_hash, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
   )
     .bind(
       await sha256(token),
@@ -286,7 +298,7 @@ async function sendLink(
       payload && JSON.stringify(payload),
       ipHash,
       new Date(now).toISOString(),
-      new Date(now + LINK_HOURS * 3600_000).toISOString(),
+      new Date(now + LINK_HOURS * 3600_000).toISOString()
     )
     .run()
 
@@ -388,7 +400,9 @@ app.get("/confirm", async (c) => {
   if (!user) {
     if (!link.nickname) return c.redirect("/prihlaseni?odkaz=neplatny")
     user = (await db
-      .prepare("INSERT INTO users (email_hash, nickname, created_at) VALUES (?, ?, ?) RETURNING id, email_hash, nickname")
+      .prepare(
+        "INSERT INTO users (email_hash, nickname, created_at) VALUES (?, ?, ?) RETURNING id, email_hash, nickname"
+      )
       .bind(link.email_hash, link.nickname, now)
       .first<User>())!
   }
@@ -415,7 +429,10 @@ app.get("/confirm", async (c) => {
 
 app.post("/logout", async (c) => {
   const sid = getCookie(c, "sid")
-  if (sid) await c.env.DB.prepare("DELETE FROM sessions WHERE token_hash = ?").bind(await sha256(sid)).run()
+  if (sid)
+    await c.env.DB.prepare("DELETE FROM sessions WHERE token_hash = ?")
+      .bind(await sha256(sid))
+      .run()
   deleteCookie(c, "sid", { path: "/" })
   return c.json({ ok: true })
 })
@@ -425,7 +442,7 @@ app.get("/me/tips", async (c) => {
   if (!user) return c.json({ error: "Nejste přihlášeni." }, 401)
   const { results } = await c.env.DB.prepare(
     `SELECT r.id, r.kind, r.name, r.subtitle, t.updated_at AS updatedAt
-     FROM tips t JOIN races r ON r.id = t.race_id WHERE t.user_id = ? ORDER BY t.updated_at DESC`,
+     FROM tips t JOIN races r ON r.id = t.race_id WHERE t.user_id = ? ORDER BY t.updated_at DESC`
   )
     .bind(user.id)
     .all()

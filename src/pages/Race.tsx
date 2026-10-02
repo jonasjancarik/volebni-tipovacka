@@ -26,7 +26,6 @@ const toNumber = (s: string) => Number(s.replace(",", ".").trim() || 0)
 const toInput = (n: number | undefined) => (n === undefined ? "" : String(n).replace(".", ","))
 const round1 = (n: number) => Math.round(n * 10) / 10
 
-
 /** Thin horizontal bar; `scale` is the value that fills the whole width. */
 function ShareBar({ value, scale, muted }: { value: number; scale: number; muted?: boolean }) {
   const width = scale > 0 ? Math.max(0, Math.min(100, (value / scale) * 100)) : 0
@@ -71,7 +70,7 @@ function TipForm({ data, onSaved }: { data: RaceDetail; onSaved: () => void }) {
   const isSenate = race.kind === "se"
   const saved = {
     shares: Object.fromEntries(
-      options.map((o) => [o.num, myTip?.filled.includes(o.num) ? toInput(myTip.shares[o.num]) : ""]),
+      options.map((o) => [o.num, myTip?.filled.includes(o.num) ? toInput(myTip.shares[o.num]) : ""])
     ) as Record<number, string>,
     turnout: toInput(myTip?.turnout),
     winner: myTip?.winner ? String(myTip.winner) : "",
@@ -79,7 +78,9 @@ function TipForm({ data, onSaved }: { data: RaceDetail; onSaved: () => void }) {
   // A draft left in this browser wins over the saved tip, so unfinished edits are not lost.
   const [draft] = useState(() => loadDraft(race.id))
   const [restored, setRestored] = useState(draft !== null)
-  const [shares, setShares] = useState<Record<number, string>>(draft ? { ...saved.shares, ...draft.shares } : saved.shares)
+  const [shares, setShares] = useState<Record<number, string>>(
+    draft ? { ...saved.shares, ...draft.shares } : saved.shares
+  )
   const [turnout, setTurnout] = useState(draft?.turnout ?? saved.turnout)
   const [winner, setWinner] = useState(draft?.winner || saved.winner)
 
@@ -177,8 +178,8 @@ function TipForm({ data, onSaved }: { data: RaceDetail; onSaved: () => void }) {
       <Alert>
         <AlertTitle>Ještě tip potvrďte v e-mailu</AlertTitle>
         <AlertDescription>
-          Na adresu {email} jsme poslali odkaz. Tip začne platit, až na něj kliknete. V e-mailu najdete i přezdívku,
-          pod kterou vás ostatní uvidí v pořadí. Když zpráva nepřijde do pár minut, podívejte se do spamu.
+          Na adresu {email} jsme poslali odkaz. Tip začne platit, až na něj kliknete. V e-mailu najdete i přezdívku, pod
+          kterou vás ostatní uvidí v pořadí. Když zpráva nepřijde do pár minut, podívejte se do spamu.
           {sent.devLink && (
             <>
               {" "}
@@ -210,7 +211,9 @@ function TipForm({ data, onSaved }: { data: RaceDetail; onSaved: () => void }) {
           </Alert>
         )}
         <FieldSet>
-          <FieldLegend>{isSenate ? "Kolik procent získají kandidáti v prvním kole" : "Kolik procent hlasů získají"}</FieldLegend>
+          <FieldLegend>
+            {isSenate ? "Kolik procent získají kandidáti v prvním kole" : "Kolik procent hlasů získají"}
+          </FieldLegend>
           <FieldDescription>
             Nemusíte vyplňovat každého. Zadejte odhad tam, kde nějaký máte, a zbytek do 100 % rozdělíme rovným dílem
             mezi ostatní. Kolik na ně vyjde, uvidíte šedě v prázdných polích.
@@ -262,8 +265,8 @@ function TipForm({ data, onSaved }: { data: RaceDetail; onSaved: () => void }) {
             </div>
             {canRescale && (
               <p className="text-sm text-muted-foreground">
-                Přepočet {remaining < 0 ? "zmenší" : "zvětší"} všechna zadaná čísla ve stejném poměru, takže pořadí
-                i odstupy mezi nimi zůstanou.
+                Přepočet {remaining < 0 ? "zmenší" : "zvětší"} všechna zadaná čísla ve stejném poměru, takže pořadí i
+                odstupy mezi nimi zůstanou.
               </p>
             )}
           </div>
@@ -296,9 +299,17 @@ function TipForm({ data, onSaved }: { data: RaceDetail; onSaved: () => void }) {
           <>
             <Field>
               <FieldLabel htmlFor="email">E-mail</FieldLabel>
-              <Input id="email" type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+              <Input
+                id="email"
+                type="email"
+                required
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
               <FieldDescription>
-                Pošleme vám odkaz, kterým tip potvrdíte. Adresu si neukládáme, jen její otisk, podle kterého vás příště poznáme.
+                Pošleme vám odkaz, kterým tip potvrdíte. Adresu si neukládáme, jen její otisk, podle kterého vás příště
+                poznáme.
               </FieldDescription>
             </Field>
             {config?.turnstileSiteKey && <Turnstile siteKey={config.turnstileSiteKey} onToken={setToken} />}
@@ -513,8 +524,9 @@ export function RacePage() {
         </Alert>
       )}
 
-      {data && config && (
-        config.open ? (
+      {data &&
+        config &&
+        (config.open ? (
           <>
             {data.myTip && !confirmation && (
               <Alert>
@@ -526,8 +538,7 @@ export function RacePage() {
           </>
         ) : (
           <Results data={data} />
-        )
-      )}
+        ))}
     </>
   )
 }

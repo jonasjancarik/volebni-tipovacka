@@ -12,7 +12,7 @@ const round1 = (n: number) => Math.round(n * 10) / 10
 export function validateTip(
   body: { turnout?: unknown; shares?: unknown; winner?: unknown },
   kind: string,
-  nums: number[],
+  nums: number[]
 ): TipInput | string {
   const raw = (body.shares ?? {}) as Record<string, unknown>
   if (typeof raw !== "object") return "Tip se nepodařilo přečíst."
@@ -60,7 +60,7 @@ export interface Scored {
 
 export function scoreTip(
   tip: TipInput,
-  actual: { pcts: Record<string, number | null>; turnout: number; winner: number | null },
+  actual: { pcts: Record<string, number | null>; turnout: number; winner: number | null }
 ): Scored {
   const nums = Object.keys(actual.pcts)
   const total = nums.reduce((a, n) => a + Math.abs((tip.shares[n] ?? 0) - (actual.pcts[n] ?? 0)), 0)
@@ -72,5 +72,4 @@ export function scoreTip(
 }
 
 /** Best tip first: smallest average error, then closest turnout. */
-export const compareScores = (a: Scored, b: Scored) =>
-  a.error - b.error || a.turnoutError - b.turnoutError
+export const compareScores = (a: Scored, b: Scored) => a.error - b.error || a.turnoutError - b.turnoutError

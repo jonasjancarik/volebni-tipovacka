@@ -19,7 +19,9 @@ export function MyTips() {
       navigate("/prihlaseni", { replace: true })
       return
     }
-    api<RaceSummary[]>("/me/tips").then(setTips).catch(() => setTips([]))
+    api<RaceSummary[]>("/me/tips")
+      .then(setTips)
+      .catch(() => setTips([]))
   }, [config, navigate])
 
   const logout = async () => {
@@ -50,7 +52,9 @@ export function MyTips() {
               <EmptyDescription>Vyberte si obec nebo senátní obvod a zkuste odhadnout výsledek.</EmptyDescription>
             </EmptyHeader>
             <EmptyContent>
-              <Button nativeButton={false} render={<Link to="/" />}>Vybrat obec nebo obvod</Button>
+              <Button nativeButton={false} render={<Link to="/" />}>
+                Vybrat obec nebo obvod
+              </Button>
             </EmptyContent>
           </Empty>
         ) : (

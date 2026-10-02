@@ -3,14 +3,12 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { parse } from "csv-parse/sync"
 
 type Row = Record<string, string>
-const read = (name: string): Row[] =>
-  parse(readFileSync(`data/csu/${name}.csv`, "utf8"), { columns: true, bom: true })
+const read = (name: string): Row[] => parse(readFileSync(`data/csu/${name}.csv`, "utf8"), { columns: true, bom: true })
 
 const sql = (v: string | number | null) =>
   v === null ? "NULL" : typeof v === "number" ? String(v) : `'${v.replaceAll("'", "''")}'`
 
-export const normalize = (s: string) =>
-  s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().trim()
+export const normalize = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().trim()
 
 const okresy = new Map(read("cnumnuts").map((r) => [r.NUMNUTS, r.NAZEVNUTS]))
 const druhy: Record<string, string> = {
@@ -91,6 +89,6 @@ writeFileSync(
   [
     insert("races", "id,kind,code,name,subtitle,search,population,seats", races),
     insert("options", "race_id,num,name,detail", options),
-  ].join("\n") + "\n",
+  ].join("\n") + "\n"
 )
 console.log(`races: ${races.length}, options: ${options.length}, skipped councils: ${skipped}`)

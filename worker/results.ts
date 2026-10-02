@@ -66,7 +66,7 @@ function statements(db: D1Database, raceId: string, r: RaceResult, now: string) 
       .prepare("UPDATE races SET counted_pct = ?, turnout = ?, final = ?, winner = ?, results_at = ? WHERE id = ?")
       .bind(r.countedPct, r.turnout, r.final ? 1 : 0, r.winner, now, raceId),
     ...Object.entries(r.pcts).map(([num, pct]) =>
-      db.prepare("UPDATE options SET pct = ? WHERE race_id = ? AND num = ?").bind(pct, raceId, Number(num)),
+      db.prepare("UPDATE options SET pct = ? WHERE race_id = ? AND num = ?").bind(pct, raceId, Number(num))
     ),
   ]
 }
@@ -90,7 +90,7 @@ export async function importResults(env: ResultsEnv): Promise<string> {
   const senate = await fetch(`${base}/senat/20261009/odata/vysledky.xml`)
   if (senate.ok) {
     const stmts = [...parseSenate(await senate.text())].flatMap(([obvod, r]) =>
-      r.countedPct > 0 ? statements(env.DB, `se-${obvod}`, r, now) : [],
+      r.countedPct > 0 ? statements(env.DB, `se-${obvod}`, r, now) : []
     )
     if (stmts.length) await env.DB.batch(stmts)
     updated += stmts.length ? 1 : 0
@@ -100,7 +100,7 @@ export async function importResults(env: ResultsEnv): Promise<string> {
   const { results } = await env.DB.prepare(
     `SELECT id, code FROM races
      WHERE kind = 'kv' AND final = 0 AND EXISTS (SELECT 1 FROM tips WHERE tips.race_id = races.id)
-     ORDER BY results_at IS NOT NULL, results_at LIMIT ?`,
+     ORDER BY results_at IS NOT NULL, results_at LIMIT ?`
   )
     .bind(Number(env.RESULTS_BATCH) || 15)
     .all<{ id: string; code: number }>()
@@ -112,7 +112,7 @@ export async function importResults(env: ResultsEnv): Promise<string> {
       const parsed = res.ok ? parseCouncil(await res.text()) : null
       if (parsed && parsed.countedPct > 0) stmts.push(...statements(env.DB, race.id, parsed, now))
       else stmts.push(env.DB.prepare("UPDATE races SET results_at = ? WHERE id = ?").bind(now, race.id))
-    }),
+    })
   )
   if (stmts.length) await env.DB.batch(stmts)
   return `senate ${updated ? "updated" : "unchanged"}, councils checked: ${results.length}`

@@ -77,7 +77,12 @@ describe("tips", () => {
   })
 
   it("ignores anything in the request that is not a share for an option on the ballot", () => {
-    const body = { turnout: 40, shares: { 1: 60, 99: 40, __proto__: 5, note: "<script>" }, nickname: "Vlastní", winner: 7 }
+    const body = {
+      turnout: 40,
+      shares: { 1: 60, 99: 40, __proto__: 5, note: "<script>" },
+      nickname: "Vlastní",
+      winner: 7,
+    }
     expect(validateTip(body, "kv", [1, 2])).toEqual({ turnout: 40, shares: { 1: 60 }, winner: null })
   })
 

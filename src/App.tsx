@@ -20,7 +20,9 @@ export const useConfig = () => useContext(ConfigContext)
 export function App() {
   const [config, setConfig] = useState<Config | null>(null)
   const reload = useCallback(() => {
-    api<Config>("/config").then(setConfig).catch(() => {})
+    api<Config>("/config")
+      .then(setConfig)
+      .catch(() => {})
   }, [])
   useEffect(reload, [reload])
 

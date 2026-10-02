@@ -15,7 +15,12 @@ describe("rescaleTo100", () => {
   })
 
   it("always lands on exactly 100 despite rounding", () => {
-    for (const values of [[1, 1, 1], [33.3, 33.3, 33.3, 7], [12.5, 7.5, 3.1, 0.4, 88], [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]]) {
+    for (const values of [
+      [1, 1, 1],
+      [33.3, 33.3, 33.3, 7],
+      [12.5, 7.5, 3.1, 0.4, 88],
+      [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1],
+    ]) {
       expect(total(rescaleTo100(values))).toBe(100)
     }
   })
