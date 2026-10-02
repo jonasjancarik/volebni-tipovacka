@@ -18,6 +18,7 @@ import { Spinner } from "@/components/ui/spinner"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { api, pct, tipsLabel, type RaceDetail } from "@/lib/api"
+import { cn } from "@/lib/utils"
 
 const toNumber = (s: string) => Number(s.replace(",", ".").trim() || 0)
 const toInput = (n: number | undefined) => (n === undefined ? "" : String(n).replace(".", ","))
@@ -40,6 +41,19 @@ const ANIMALS = [
 ]
 const pick = (list: string[]) => list[Math.floor(Math.random() * list.length)]
 const randomNickname = () => `${pick(ADJECTIVES)} ${pick(ANIMALS)} ${Math.floor(Math.random() * 900) + 100}`
+
+/** Thin horizontal bar; `scale` is the value that fills the whole width. */
+function ShareBar({ value, scale, muted }: { value: number; scale: number; muted?: boolean }) {
+  const width = scale > 0 ? Math.max(0, Math.min(100, (value / scale) * 100)) : 0
+  return (
+    <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted" aria-hidden>
+      <div
+        className={cn("h-full rounded-full transition-[width]", muted ? "bg-muted-foreground/35" : "bg-primary")}
+        style={{ width: `${width}%` }}
+      />
+    </div>
+  )
+}
 
 function PercentInput(props: {
   id: string
@@ -95,6 +109,13 @@ function TipForm({ data, onSaved }: { data: RaceDetail; onSaved: () => void }) {
   const each = blanks > 0 && remaining >= 0 ? remaining / blanks : 0
   const sharesOk = !invalidValue && filled.length > 0 && remaining >= 0 && (blanks > 0 || remaining === 0)
   const complete = sharesOk && turnout.trim() !== "" && (!isSenate || winner !== "")
+  // Bars are drawn relative to the largest share so small parties stay visible on long ballots.
+  const shareOf = (num: number) => {
+    const typed = (shares[num] ?? "").trim()
+    const v = typed === "" ? each : toNumber(typed)
+    return Number.isFinite(v) ? v : 0
+  }
+  const barScale = Math.max(10, ...options.map((o) => shareOf(o.num)))
   const status =
     filled.length === 0
       ? `Vyplňte odhad aspoň u jednoho ${isSenate ? "kandidáta" : "z uskupení"}.`
@@ -182,9 +203,12 @@ function TipForm({ data, onSaved }: { data: RaceDetail; onSaved: () => void }) {
                 <Badge variant="outline" className="w-8 shrink-0 justify-center tabular-nums">
                   {o.num}
                 </Badge>
-                <label htmlFor={`share-${o.num}`} className="min-w-0 flex-1">
-                  <div className="font-medium">{o.name}</div>
-                  {o.detail && <div className="line-clamp-2 text-sm text-muted-foreground">{o.detail}</div>}
+                <label htmlFor={`share-${o.num}`} className="flex min-w-0 flex-1 flex-col gap-1.5">
+                  <div>
+                    <div className="font-medium">{o.name}</div>
+                    {o.detail && <div className="line-clamp-2 text-sm text-muted-foreground">{o.detail}</div>}
+                  </div>
+                  <ShareBar value={shareOf(o.num)} scale={barScale} muted={(shares[o.num] ?? "").trim() === ""} />
                 </label>
                 <PercentInput
                   id={`share-${o.num}`}
@@ -270,6 +294,7 @@ function Results({ data }: { data: RaceDetail }) {
   const sorted = counted ? [...options].sort((a, b) => (b.pct ?? 0) - (a.pct ?? 0)) : options
   const winnerName = options.find((o) => o.num === race.winner)?.name
   const myWinner = options.find((o) => o.num === myTip?.winner)?.name
+  const barScale = Math.max(10, ...options.map((o) => Math.max(o.pct ?? 0, myTip?.shares[o.num] ?? 0)))
 
   return (
     <>
@@ -300,7 +325,15 @@ function Results({ data }: { data: RaceDetail }) {
             <TableBody>
               {sorted.map((o) => (
                 <TableRow key={o.num}>
-                  <TableCell className="whitespace-normal">{o.name}</TableCell>
+                  <TableCell className="whitespace-normal">
+                    <div className="flex flex-col gap-1.5">
+                      {o.name}
+                      <div className="flex flex-col gap-0.5">
+                        {counted && <ShareBar value={o.pct ?? 0} scale={barScale} />}
+                        {myTip && <ShareBar value={myTip.shares[o.num] ?? 0} scale={barScale} muted />}
+                      </div>
+                    </div>
+                  </TableCell>
                   {counted && <TableCell className="text-right tabular-nums">{pct(o.pct ?? 0, 2)}</TableCell>}
                   {myTip && <TableCell className="text-right tabular-nums">{pct(myTip.shares[o.num] ?? 0)}</TableCell>}
                 </TableRow>
@@ -312,6 +345,9 @@ function Results({ data }: { data: RaceDetail }) {
               </TableRow>
             </TableBody>
           </Table>
+        )}
+        {counted && myTip && (
+          <p className="text-sm text-muted-foreground">Tmavý pruh ukazuje skutečný výsledek, světlý váš tip.</p>
         )}
         {race.kind === "se" && (winnerName || myWinner) && (
           <p className="text-sm">

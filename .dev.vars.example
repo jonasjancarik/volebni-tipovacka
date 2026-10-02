@@ -1,4 +1,5 @@
 # DEV_MODE=1 skips e-mail sending and returns the confirmation link in the API response.
 DEV_MODE=1
 EMAIL_HASH_KEY=local-development-key
-# TURNSTILE_SECRET=
+# The production widget only works on the live domain, so local development runs without it.
+TURNSTILE_SITE_KEY=
