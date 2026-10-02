@@ -23,6 +23,11 @@ se výsledky stahují z otevřených dat ČSÚ a u každé obce vzniká pořadí
   (`worker/results.ts`). Pořadí se počítá při zobrazení jako průměrná odchylka v procentních bodech,
   při shodě rozhoduje odhad účasti (`worker/scoring.ts`). Spočítané pořadí se minutu drží v paměti.
 
+- **Návštěvnost:** bez cookies a bez identifikátorů návštěvníků. Stránka po každém zobrazení zavolá
+  `POST /api/view` a v tabulce `page_views` se zvýší denní součet pro danou stránku a odkazující web
+  (`worker/telemetry.ts`). `visits` počítá zobrazení, kterými návštěva začala. IP adresa ani prohlížeč se
+  neukládají, takže počet unikátních lidí zjistit nejde.
+
 Vynechaný je Lišov, jediná obec rozdělená na více volebních obvodů, a jedna obec bez kandidátní listiny.
 
 ## Vývoj
@@ -38,6 +43,12 @@ S `DEV_MODE=1` v `.dev.vars` se e-maily neposílají a potvrzovací odkaz se vr�
 Platí to jen na vývojových adresách (`localhost`, `*.local`, `*.ts.net`); jinde se `DEV_MODE` ignoruje.
 Testovací tipy a výsledky z lokální databáze smaže
 `pnpm wrangler d1 execute DB --local --file scripts/reset-local.sql`.
+
+Návštěvnost po dnech:
+
+```bash
+pnpm wrangler d1 execute DB --remote --command "SELECT day, SUM(views) AS views, SUM(visits) AS visits FROM page_views GROUP BY day ORDER BY day"
+```
 
 Kontroly: `pnpm test`, `pnpm typecheck`, `pnpm lint`.
 

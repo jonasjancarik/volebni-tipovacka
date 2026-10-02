@@ -4,6 +4,7 @@ import { BrowserRouter, Link, Route, Routes } from "react-router"
 import { Button } from "@/components/ui/button"
 import { Toaster } from "@/components/ui/sonner"
 import { api, type Config } from "@/lib/api"
+import { usePageViews } from "@/lib/telemetry"
 import { Confirm } from "@/pages/Confirm"
 import { Home } from "@/pages/Home"
 import { Login } from "@/pages/Login"
@@ -18,6 +19,11 @@ const ConfigContext = createContext<{ config: Config | null; reload: () => void 
 
 export const useConfig = () => useContext(ConfigContext)
 
+function PageViews() {
+  usePageViews()
+  return null
+}
+
 export function App() {
   const [config, setConfig] = useState<Config | null>(null)
   const reload = useCallback(() => {
@@ -30,6 +36,7 @@ export function App() {
   return (
     <ConfigContext.Provider value={{ config, reload }}>
       <BrowserRouter>
+        <PageViews />
         <div className="mx-auto flex min-h-svh w-full max-w-3xl flex-col px-4">
           <header className="flex items-center justify-between gap-4 py-4">
             <Link to="/" className="font-heading text-lg font-semibold">

@@ -6,6 +6,7 @@ import { secureHeaders } from "hono/secure-headers"
 import { canonicalEmail } from "./email"
 import { randomNickname } from "./nicknames"
 import { importResults } from "./results"
+import { pragueDay, referrerHost, viewPath } from "./telemetry"
 import { compareScores, expandShares, scoreTip, validateTip, type Scored, type Shares, type TipInput } from "./scoring"
 
 interface Env {
@@ -561,6 +562,23 @@ app.delete("/me", async (c) => {
   ])
   deleteCookie(c, "sid", { path: "/" })
   return c.json({ ok: true })
+})
+
+// Traffic is counted without cookies or any visitor identifier: each view only raises a daily total.
+app.post("/view", async (c) => {
+  const body = await c.req.json<Record<string, unknown>>().catch(() => ({}) as Record<string, unknown>)
+  const page = viewPath(body.path)
+  if (!page) return c.body(null, 204)
+  const entry = body.entry === true
+  const referrer = entry ? referrerHost(body.referrer, new URL(c.req.url).hostname) : ""
+  await c.env.DB.prepare(
+    `INSERT INTO page_views (day, path, referrer, views, visits)
+     SELECT ?1, ?2, ?3, 1, ?4 WHERE ?5 IS NULL OR EXISTS (SELECT 1 FROM races WHERE id = ?5)
+     ON CONFLICT (day, path, referrer) DO UPDATE SET views = views + 1, visits = visits + excluded.visits`
+  )
+    .bind(pragueDay(), page.path, referrer, entry ? 1 : 0, page.raceId)
+    .run()
+  return c.body(null, 204)
 })
 
 app.all("*", (c) => c.json({ error: "Nenalezeno." }, 404))

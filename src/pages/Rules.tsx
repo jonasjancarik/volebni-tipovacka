@@ -55,6 +55,12 @@ export function Rules() {
           při příštím přihlášení poznáme. Z toho plyne, že vám nemůžeme sami napsat, ani kdybyste vyhráli. Účet včetně
           všech tipů můžete kdykoli smazat na stránce Moje tipy.
         </p>
+        <p>
+          Návštěvnost měříme bez cookies a bez sledování jednotlivých lidí. Počítáme jen, kolikrát se která stránka za
+          den zobrazila a z jakého webu na ni lidé přišli. Vaši IP adresu ani nic o vašem prohlížeči si k tomu
+          neukládáme, a proto se vás neptáme na souhlas. Jediná cookie, kterou používáme, vás po potvrzení tipu drží
+          přihlášené.
+        </p>
       </section>
     </article>
   )
