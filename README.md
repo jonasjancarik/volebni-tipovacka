@@ -67,4 +67,12 @@ Před prvním nasazením je potřeba:
 Bez `TURNSTILE_SECRET` produkce tipy od nepřihlášených ani přihlášení nepřijme. Bezpečnostní hlavičky
 stránek jsou v `public/_headers`; kdyby web začal načítat něco z další domény, je potřeba ji tam povolit.
 
+### Automatické nasazení
+
+Každý push do větve `main` nasadí web sám přes Cloudflare Workers Builds. Spouštěč „Deploy main“ je
+připojený k tomuto repozitáři na GitHubu a spouští `pnpm build` a `npx wrangler deploy`. Průběh sestavení
+je v dashboardu Cloudflare u workeru `volebni-tipovacka` v části Builds, nebo přes
+`cf builds list --external-script-id <tag workeru>`. Migrace databáze ani seed se při tom nespouštějí,
+ty je potřeba pustit ručně (viz výše).
+
 Seed nahrávejte jen před volbami: přepisuje řádky obcí včetně už stažených výsledků.
