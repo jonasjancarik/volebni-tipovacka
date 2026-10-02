@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input"
 import { InputGroup, InputGroupAddon, InputGroupInput, InputGroupText } from "@/components/ui/input-group"
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
 import { Progress } from "@/components/ui/progress"
+import { ShareSlider } from "@/components/share-slider"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
@@ -100,6 +101,7 @@ function TipForm({ data, onSaved }: { data: RaceDetail; onSaved: () => void }) {
   }
   const [email, setEmail] = useState("")
   const [sort, setSort] = useState<"num" | "name">("num")
+  const [dragMode, setDragMode] = useState(false)
   const [token, setToken] = useState("")
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
@@ -130,6 +132,13 @@ function TipForm({ data, onSaved }: { data: RaceDetail; onSaved: () => void }) {
     return Number.isFinite(v) ? v : 0
   }
   const barScale = Math.max(10, ...options.map((o) => shareOf(o.num)))
+  // Dragging gets a roomier scale, so a bar can be pulled well past the current largest one.
+  const dragScale = Math.max(20, Math.ceil((barScale * 1.5) / 5) * 5)
+  // A bar can grow only as far as the other typed shares leave room under 100 %.
+  const roomFor = (num: number) => {
+    const own = (shares[num] ?? "").trim() === "" ? 0 : toNumber(shares[num])
+    return Math.max(0, round1(100 - (sum - (Number.isFinite(own) ? own : 0))))
+  }
   const status =
     filled.length === 0
       ? `Vyplňte odhad aspoň u jednoho ${isSenate ? "kandidáta" : "z uskupení"}.`
@@ -228,6 +237,16 @@ function TipForm({ data, onSaved }: { data: RaceDetail; onSaved: () => void }) {
             <ToggleGroupItem value="num">Podle volebního čísla</ToggleGroupItem>
             <ToggleGroupItem value="name">Podle abecedy</ToggleGroupItem>
           </ToggleGroup>
+          <ToggleGroup
+            variant="outline"
+            size="sm"
+            value={[dragMode ? "drag" : "type"]}
+            onValueChange={(v) => v[0] && setDragMode(v[0] === "drag")}
+            aria-label="Způsob zadávání"
+          >
+            <ToggleGroupItem value="type">Psát čísla</ToggleGroupItem>
+            <ToggleGroupItem value="drag">Táhnout sloupce</ToggleGroupItem>
+          </ToggleGroup>
           <div className="flex flex-col divide-y">
             {shown.map((o) => (
               <div key={o.num} className="flex items-center gap-3 py-2.5">
@@ -239,7 +258,19 @@ function TipForm({ data, onSaved }: { data: RaceDetail; onSaved: () => void }) {
                     <div className="font-medium">{o.name}</div>
                     {o.detail && <div className="line-clamp-2 text-sm text-muted-foreground">{o.detail}</div>}
                   </div>
-                  <ShareBar value={shareOf(o.num)} scale={barScale} muted={(shares[o.num] ?? "").trim() === ""} />
+                  {dragMode && (
+                    <ShareSlider
+                      label={`Odhad pro ${o.name}`}
+                      value={shareOf(o.num)}
+                      scale={dragScale}
+                      max={roomFor(o.num)}
+                      muted={(shares[o.num] ?? "").trim() === ""}
+                      onChange={(v) => setShares((s) => ({ ...s, [o.num]: toInput(v) }))}
+                    />
+                  )}
+                  {!dragMode && (
+                    <ShareBar value={shareOf(o.num)} scale={barScale} muted={(shares[o.num] ?? "").trim() === ""} />
+                  )}
                 </label>
                 <PercentInput
                   id={`share-${o.num}`}
