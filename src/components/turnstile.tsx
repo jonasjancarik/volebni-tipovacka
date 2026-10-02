@@ -3,7 +3,7 @@ import { useEffect, useRef } from "react"
 declare global {
   interface Window {
     turnstile?: {
-      render(el: HTMLElement, options: { sitekey: string; callback(token: string): void }): string
+      render(el: HTMLElement, options: { sitekey: string; language: string; callback(token: string): void }): string
       remove(id: string): void
     }
   }
@@ -19,7 +19,7 @@ export function Turnstile({ siteKey, onToken }: { siteKey: string; onToken: (tok
     let cancelled = false
     const render = () => {
       if (cancelled || !ref.current || !window.turnstile) return
-      widget = window.turnstile.render(ref.current, { sitekey: siteKey, callback: onToken })
+      widget = window.turnstile.render(ref.current, { sitekey: siteKey, language: "cs", callback: onToken })
     }
     if (window.turnstile) render()
     else {

@@ -17,6 +17,7 @@
       "migrations_dir": "migrations"
     }
   ],
+  "send_email": [{ "name": "EMAIL" }],
   "triggers": { "crons": ["*/2 * * * *"] },
   "observability": { "enabled": true },
   "vars": {
@@ -26,7 +27,7 @@
     "RESULTS_UNTIL": "2026-10-19T00:00:00Z",
     "RESULTS_BASE_URL": "https://volby.gov.cz/appdata",
     "RESULTS_BATCH": "15",
-    "MAIL_FROM": "",
+    "MAIL_FROM": "tipy@tipovacka.jonasjancarik.cz",
     "TURNSTILE_SITE_KEY": "0x4AAAAAAFL26Auex5JblT0E"
   }
 }
