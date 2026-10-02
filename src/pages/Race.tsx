@@ -19,6 +19,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { api, pct, tipsLabel, type RaceDetail } from "@/lib/api"
 import { randomNickname } from "@/lib/nicknames"
+import { rescaleTo100 } from "@/lib/shares"
 import { cn } from "@/lib/utils"
 
 const toNumber = (s: string) => Number(s.replace(",", ".").trim() || 0)
@@ -93,6 +94,12 @@ function TipForm({ data, onSaved }: { data: RaceDetail; onSaved: () => void }) {
   const each = blanks > 0 && remaining >= 0 ? remaining / blanks : 0
   const sharesOk = !invalidValue && filled.length > 0 && remaining >= 0 && (blanks > 0 || remaining === 0)
   const complete = sharesOk && turnout.trim() !== "" && (!isSenate || winner !== "")
+  // Offered when the entered shares cannot add up to 100: scales them down (or up) keeping their proportions.
+  const canRescale = !invalidValue && sum > 0 && (remaining < 0 || (blanks === 0 && remaining > 0))
+  const rescale = () => {
+    const scaled = rescaleTo100(values)
+    setShares((s) => ({ ...s, ...Object.fromEntries(filled.map((o, i) => [o.num, toInput(scaled[i])])) }))
+  }
   // Bars are drawn relative to the largest share so small parties stay visible on long ballots.
   const shareOf = (num: number) => {
     const typed = (shares[num] ?? "").trim()
@@ -206,9 +213,22 @@ function TipForm({ data, onSaved }: { data: RaceDetail; onSaved: () => void }) {
           </div>
           <div className="sticky bottom-0 flex flex-col gap-2 border-t bg-background py-3">
             <Progress value={Math.min(sum, 100)} />
-            <p className="text-sm" aria-live="polite">
-              {status}
-            </p>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm" aria-live="polite">
+                {status}
+              </p>
+              {canRescale && (
+                <Button type="button" variant="outline" size="sm" onClick={rescale}>
+                  Přepočítat na 100 %
+                </Button>
+              )}
+            </div>
+            {canRescale && (
+              <p className="text-sm text-muted-foreground">
+                Přepočet {remaining < 0 ? "zmenší" : "zvětší"} všechna zadaná čísla ve stejném poměru, takže pořadí
+                i odstupy mezi nimi zůstanou.
+              </p>
+            )}
           </div>
         </FieldSet>
 
