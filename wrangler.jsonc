@@ -2,6 +2,8 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "volebni-tipovacka",
   "main": "worker/index.ts",
+  "account_id": "7756b12931ecfb3900a31049e157d706",
+  "routes": [{ "pattern": "tipovacka.jonasjancarik.cz", "custom_domain": true }],
   "compatibility_date": "2026-09-01",
   "assets": {
     "not_found_handling": "single-page-application",
@@ -11,8 +13,7 @@
     {
       "binding": "DB",
       "database_name": "volebni-tipovacka",
-      // Replaced with the real ID once the production database exists.
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "9cdb02fe-31ed-4e36-803b-e92973b451a9",
       "migrations_dir": "migrations"
     }
   ],
@@ -26,6 +27,6 @@
     "RESULTS_BASE_URL": "https://volby.gov.cz/appdata",
     "RESULTS_BATCH": "15",
     "MAIL_FROM": "",
-    "TURNSTILE_SITE_KEY": ""
+    "TURNSTILE_SITE_KEY": "0x4AAAAAAFL26Auex5JblT0E"
   }
 }
