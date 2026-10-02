@@ -39,7 +39,7 @@ export function App() {
         <PageViews />
         <div className="mx-auto flex min-h-svh w-full max-w-3xl flex-col px-4">
           <header className="flex items-center justify-between gap-4 py-4">
-            <Link to="/" className="font-heading text-lg font-semibold">
+            <Link to="/" className="font-heading text-lg font-semibold text-primary">
               Volební tipovačka
             </Link>
             <nav className="flex items-center gap-1">
