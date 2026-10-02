@@ -33,7 +33,7 @@ function ShareBar({ value, scale, muted }: { value: number; scale: number; muted
   return (
     <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted" aria-hidden>
       <div
-        className={cn("h-full rounded-full transition-[width]", muted ? "bg-muted-foreground/35" : "bg-primary")}
+        className={cn("h-full rounded-full transition-[width]", muted ? "bg-muted-foreground/35" : "bg-gradient-to-r from-primary to-[oklch(0.62_0.21_350)]")}
         style={{ width: `${width}%` }}
       />
     </div>

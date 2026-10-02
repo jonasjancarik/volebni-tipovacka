@@ -68,7 +68,7 @@ export function ShareSlider(props: {
       }}
     >
       <div
-        className={cn("h-full rounded-md", muted ? "bg-muted-foreground/35" : "bg-primary")}
+        className={cn("h-full rounded-md", muted ? "bg-muted-foreground/35" : "bg-gradient-to-r from-primary to-[oklch(0.62_0.21_350)]")}
         style={{ width: `${width}%` }}
       />
       <div

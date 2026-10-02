@@ -54,7 +54,7 @@ export function Home() {
   return (
     <>
       <section className="flex flex-col gap-3 pt-6">
-        <h1 className="font-heading text-3xl font-semibold tracking-tight text-primary sm:text-4xl">Jak dopadnou volby u vás?</h1>
+        <h1 className="font-heading text-3xl font-semibold tracking-tight brand-gradient sm:text-4xl">Jak dopadnou volby u vás?</h1>
         <p className="text-lg text-muted-foreground">
           Tipněte si výsledek komunálních voleb ve své obci nebo senátních voleb ve svém obvodu. Po sečtení hlasů
           uvidíte, jak blízko jste byli a kdo tipoval nejlépe.
