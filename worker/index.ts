@@ -1,5 +1,6 @@
 import { Hono } from "hono"
 import { deleteCookie, getCookie, setCookie } from "hono/cookie"
+import { secureHeaders } from "hono/secure-headers"
 import { randomNickname } from "./nicknames"
 import { importResults } from "./results"
 import { compareScores, expandShares, scoreTip, validateTip, type Shares, type TipInput } from "./scoring"
@@ -49,7 +50,8 @@ const sha256 = async (text: string) => {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("")
 }
 
-const hashEmail = async (env: Env, email: string) => {
+/** HMAC-SHA256 with EMAIL_HASH_KEY, so stored hashes cannot be reversed by trying every possible input. */
+const keyedHash = async (env: Env, text: string) => {
   if (!env.EMAIL_HASH_KEY) throw new Error("EMAIL_HASH_KEY is not configured")
   const key = await crypto.subtle.importKey(
     "raw",
@@ -58,8 +60,22 @@ const hashEmail = async (env: Env, email: string) => {
     false,
     ["sign"]
   )
-  const mac = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(email))
+  const mac = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(text))
   return [...new Uint8Array(mac)].map((b) => b.toString(16).padStart(2, "0")).join("")
+}
+
+const hashEmail = keyedHash
+// The prefix keeps IP hashes apart from e-mail hashes made with the same key.
+const hashIp = (env: Env, ip: string) => keyedHash(env, `ip:${ip}`)
+
+/**
+ * DEV_MODE skips Turnstile and hands out confirmation links without e-mail, so it only counts on a
+ * development host. Set by mistake in production, it changes nothing.
+ */
+const isDev = (env: Env, url: string) => {
+  const host = new URL(url).hostname
+  const local = ["localhost", "127.0.0.1", "[::1]"].includes(host) || /\.(localhost|local|ts\.net)$/.test(host)
+  return env.DEV_MODE === "1" && local
 }
 
 const randomToken = () => {
@@ -78,6 +94,12 @@ const cleanEmail = (v: unknown) => {
     .toLowerCase()
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && email.length <= 200 ? email : null
 }
+
+app.use("*", secureHeaders())
+app.use("*", async (c, next) => {
+  await next()
+  c.header("Cache-Control", "no-store")
+})
 
 app.use("*", async (c, next) => {
   const sid = getCookie(c, "sid")
@@ -244,8 +266,16 @@ async function saveTip(db: D1Database, userId: number, raceId: string, tip: TipI
     .run()
 }
 
-async function verifyTurnstile(env: Env, token: unknown, ip: string) {
-  if (!env.TURNSTILE_SECRET) return true
+async function verifyTurnstile(
+  c: { env: Env; req: { url: string; header(name: string): string | undefined } },
+  token: unknown
+) {
+  const env = c.env
+  if (!env.TURNSTILE_SECRET) {
+    if (isDev(env, c.req.url)) return true
+    throw new Error("TURNSTILE_SECRET is not configured")
+  }
+  const ip = c.req.header("cf-connecting-ip") ?? ""
   const res = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
     method: "POST",
     body: new URLSearchParams({ secret: env.TURNSTILE_SECRET, response: String(token ?? ""), remoteip: ip }),
@@ -261,7 +291,7 @@ async function sendLink(
 ): Promise<{ error?: string; devLink?: string }> {
   const env = c.env
   const ip = c.req.header("cf-connecting-ip") ?? "local"
-  const ipHash = await sha256(ip)
+  const ipHash = await hashIp(env, ip)
   const emailHash = await hashEmail(env, email)
   const hourAgo = new Date(Date.now() - 3600_000).toISOString()
   const recent = await env.DB.prepare(
@@ -303,9 +333,9 @@ async function sendLink(
     .run()
 
   const origin = new URL(c.req.url).origin
-  const link = `${origin}/api/confirm?token=${token}`
+  const link = `${origin}/potvrzeni?token=${token}`
   const overview = `${origin}/moje-tipy`
-  if (env.DEV_MODE === "1") {
+  if (isDev(env, c.req.url)) {
     console.log(`Confirmation link for ${email}: ${link}`)
     return { devLink: link }
   }
@@ -361,7 +391,7 @@ app.post("/tips", async (c) => {
 
   const email = cleanEmail(body.email)
   if (!email) return c.json({ error: "Zadejte platnou e-mailovou adresu." }, 400)
-  if (!(await verifyTurnstile(c.env, body.turnstileToken, c.req.header("cf-connecting-ip") ?? "")))
+  if (!(await verifyTurnstile(c, body.turnstileToken)))
     return c.json({ error: "Nepodařilo se ověřit, že nejste robot. Zkuste to prosím znovu." }, 400)
   const sent = await sendLink(c, email, { raceId, raceName: race.name, tip })
   if (sent.error) return c.json({ error: sent.error }, 429)
@@ -372,7 +402,7 @@ app.post("/login", async (c) => {
   const body = await c.req.json<Record<string, unknown>>().catch(() => ({}) as Record<string, unknown>)
   const email = cleanEmail(body.email)
   if (!email) return c.json({ error: "Zadejte platnou e-mailovou adresu." }, 400)
-  if (!(await verifyTurnstile(c.env, body.turnstileToken, c.req.header("cf-connecting-ip") ?? "")))
+  if (!(await verifyTurnstile(c, body.turnstileToken)))
     return c.json({ error: "Nepodařilo se ověřit, že nejste robot. Zkuste to prosím znovu." }, 400)
   // Same answer whether or not the address has tips, so the form does not reveal who takes part.
   const known = await c.env.DB.prepare("SELECT 1 FROM users WHERE email_hash = ?")
@@ -384,21 +414,31 @@ app.post("/login", async (c) => {
   return c.json({ emailSent: true, devLink: sent.devLink })
 })
 
-app.get("/confirm", async (c) => {
+// Links in e-mails sent before confirmation moved to its own page still point here.
+app.get("/confirm", (c) => c.redirect(`/potvrzeni?token=${encodeURIComponent(c.req.query("token") ?? "")}`))
+
+// Confirmation is a POST made from a button, so mail servers that open links on their own cannot
+// confirm a tip or sign anyone in. A link works once.
+app.post("/confirm", async (c) => {
   const db = c.env.DB
+  const body = await c.req.json<Record<string, unknown>>().catch(() => ({}) as Record<string, unknown>)
   const now = new Date().toISOString()
+  const invalid = () => c.json({ error: "Odkaz už neplatí. Nechte si poslat nový." }, 400)
+  // Expiring the row instead of deleting it keeps it counted in the hourly e-mail limit.
   const link = await db
-    .prepare("SELECT email_hash, nickname, payload FROM magic_links WHERE token_hash = ? AND expires_at > ?")
-    .bind(await sha256(c.req.query("token") ?? ""), now)
+    .prepare(
+      "UPDATE magic_links SET expires_at = ?1 WHERE token_hash = ?2 AND expires_at > ?1 RETURNING email_hash, nickname, payload"
+    )
+    .bind(now, await sha256(String(body.token ?? "")))
     .first<{ email_hash: string; nickname: string | null; payload: string | null }>()
-  if (!link) return c.redirect("/prihlaseni?odkaz=neplatny")
+  if (!link) return invalid()
 
   let user = await db
     .prepare("SELECT id, email_hash, nickname FROM users WHERE email_hash = ?")
     .bind(link.email_hash)
     .first<User>()
   if (!user) {
-    if (!link.nickname) return c.redirect("/prihlaseni?odkaz=neplatny")
+    if (!link.nickname) return invalid()
     user = (await db
       .prepare(
         "INSERT INTO users (email_hash, nickname, created_at) VALUES (?, ?, ?) RETURNING id, email_hash, nickname"
@@ -420,11 +460,11 @@ app.get("/confirm", async (c) => {
     maxAge: SESSION_DAYS * 86400,
   })
 
-  if (!link.payload) return c.redirect("/moje-tipy")
+  if (!link.payload) return c.json({ next: "/moje-tipy" })
   const payload = JSON.parse(link.payload) as { raceId: string; tip: TipInput }
-  if (!isOpen(c.env)) return c.redirect(`/tip/${payload.raceId}?potvrzeni=pozde`)
+  if (!isOpen(c.env)) return c.json({ next: `/tip/${payload.raceId}?potvrzeni=pozde` })
   await saveTip(db, user.id, payload.raceId, payload.tip)
-  return c.redirect(`/tip/${payload.raceId}?potvrzeni=ok`)
+  return c.json({ next: `/tip/${payload.raceId}?potvrzeni=ok` })
 })
 
 app.post("/logout", async (c) => {
@@ -464,9 +504,21 @@ app.delete("/me", async (c) => {
 
 app.all("*", (c) => c.json({ error: "Nenalezeno." }, 404))
 
+/** Removes sign-in data that is no longer needed: ended sessions and links past the hourly e-mail limit window. */
+async function purgeExpired(db: D1Database) {
+  const now = Date.now()
+  await db.batch([
+    db.prepare("DELETE FROM sessions WHERE expires_at < ?").bind(new Date(now).toISOString()),
+    db
+      .prepare("DELETE FROM magic_links WHERE expires_at < ?1 AND created_at < ?2")
+      .bind(new Date(now).toISOString(), new Date(now - 3600_000).toISOString()),
+  ])
+}
+
 export default {
   fetch: app.fetch,
   async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(importResults(env).then((summary) => console.log(`results import: ${summary}`)))
+    ctx.waitUntil(purgeExpired(env.DB))
   },
 } satisfies ExportedHandler<Env>

@@ -1,5 +1,4 @@
 import { useState } from "react"
-import { useSearchParams } from "react-router"
 
 import { useConfig } from "@/App"
 import { Turnstile } from "@/components/turnstile"
@@ -12,7 +11,6 @@ import { api } from "@/lib/api"
 
 export function Login() {
   const { config } = useConfig()
-  const [params] = useSearchParams()
   const [email, setEmail] = useState("")
   const [token, setToken] = useState("")
   const [busy, setBusy] = useState(false)
@@ -40,12 +38,6 @@ export function Login() {
           Pošleme vám odkaz, kterým se dostanete ke svým tipům. Heslo nepotřebujete.
         </p>
       </div>
-      {params.get("odkaz") === "neplatny" && !sent && (
-        <Alert variant="destructive">
-          <AlertTitle>Odkaz už neplatí</AlertTitle>
-          <AlertDescription>Nechte si poslat nový.</AlertDescription>
-        </Alert>
-      )}
       {sent ? (
         <Alert>
           <AlertTitle>Podívejte se do e-mailu</AlertTitle>

@@ -4,6 +4,7 @@ import { BrowserRouter, Link, Route, Routes } from "react-router"
 import { Button } from "@/components/ui/button"
 import { Toaster } from "@/components/ui/sonner"
 import { api, type Config } from "@/lib/api"
+import { Confirm } from "@/pages/Confirm"
 import { Home } from "@/pages/Home"
 import { Login } from "@/pages/Login"
 import { MyTips } from "@/pages/MyTips"
@@ -55,6 +56,7 @@ export function App() {
               <Route path="/tip/:id" element={<RacePage />} />
               <Route path="/moje-tipy" element={<MyTips />} />
               <Route path="/prihlaseni" element={<Login />} />
+              <Route path="/potvrzeni" element={<Confirm />} />
               <Route path="/pravidla" element={<Rules />} />
               <Route path="*" element={<Home />} />
             </Routes>

@@ -11,6 +11,8 @@ se výsledky stahují z otevřených dat ČSÚ a u každé obce vzniká pořadí
 - **Kandidátky:** registry ČSÚ v `data/csu/` (stav k 23. 9. 2026 pro obce a 15. 9. 2026 pro Senát),
   `pnpm seed:build` z nich vyrobí `seed/seed.sql`.
 - **Přihlášení:** bez hesla. První tip se potvrzuje odkazem z e-mailu, který zároveň přihlásí zařízení.
+  Odkaz vede na stránku s potvrzovacím tlačítkem a platí jen jednou, takže ho za uživatele nepotvrdí
+  poštovní server, který odkazy sám otevírá.
   E-mailové adresy se neukládají, jen jejich otisk (HMAC s tajným klíčem `EMAIL_HASH_KEY`). Klíč se nesmí
   změnit, jinak se nikdo nepřihlásí ke svým tipům.
 - **Uzávěrka:** `DEADLINE` ve `wrangler.jsonc` (pátek 9. 10. ve 14:00). Do té doby jsou cizí tipy skryté.
@@ -30,6 +32,7 @@ pnpm dev
 ```
 
 S `DEV_MODE=1` v `.dev.vars` se e-maily neposílají a potvrzovací odkaz se vrátí rovnou ve stránce.
+Platí to jen na vývojových adresách (`localhost`, `*.local`, `*.ts.net`); jinde se `DEV_MODE` ignoruje.
 Testovací tipy a výsledky z lokální databáze smaže
 `pnpm wrangler d1 execute DB --local --file scripts/reset-local.sql`.
 
@@ -46,5 +49,8 @@ Před prvním nasazením je potřeba:
 3. založit widget Turnstile, nastavit `TURNSTILE_SITE_KEY` a secret `TURNSTILE_SECRET`,
 4. nastavit secret `EMAIL_HASH_KEY` na dlouhý náhodný řetězec,
 5. nenastavovat `DEV_MODE`.
+
+Bez `TURNSTILE_SECRET` produkce tipy od nepřihlášených ani přihlášení nepřijme. Bezpečnostní hlavičky
+stránek jsou v `public/_headers`; kdyby web začal načítat něco z další domény, je potřeba ji tam povolit.
 
 Seed nahrávejte jen před volbami: přepisuje řádky obcí včetně už stažených výsledků.
