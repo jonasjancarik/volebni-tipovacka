@@ -27,7 +27,8 @@ export function Rules() {
         <p>
           Tip můžete odeslat i měnit do otevření volebních místností
           {config ? `, tedy do: ${formatDeadline(config.deadline)}` : ""}. Tip začne platit, až ho potvrdíte odkazem
-          z e-mailu. Do uzávěrky nikdo cizí tipy nevidí, potom se zveřejní pod přezdívkami.
+          z e-mailu. Rozepsaný tip si váš prohlížeč pamatuje, takže se k němu můžete vrátit i po zavření stránky.
+          Do uzávěrky nikdo cizí tipy nevidí, potom se zveřejní pod přezdívkami.
         </p>
       </section>
 

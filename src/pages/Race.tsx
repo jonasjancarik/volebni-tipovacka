@@ -5,7 +5,7 @@ import { toast } from "sonner"
 
 import { useConfig } from "@/App"
 import { Turnstile } from "@/components/turnstile"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Field, FieldDescription, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field"
@@ -18,6 +18,7 @@ import { Spinner } from "@/components/ui/spinner"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { api, pct, tipsLabel, type RaceDetail } from "@/lib/api"
+import { clearDraft, loadDraft, saveDraft } from "@/lib/drafts"
 import { rescaleTo100 } from "@/lib/shares"
 import { cn } from "@/lib/utils"
 
@@ -68,11 +69,34 @@ function TipForm({ data, onSaved }: { data: RaceDetail; onSaved: () => void }) {
   const { config } = useConfig()
   const { race, options, myTip } = data
   const isSenate = race.kind === "se"
-  const [shares, setShares] = useState<Record<number, string>>(() =>
-    Object.fromEntries(options.map((o) => [o.num, myTip?.filled.includes(o.num) ? toInput(myTip.shares[o.num]) : ""])),
-  )
-  const [turnout, setTurnout] = useState(toInput(myTip?.turnout))
-  const [winner, setWinner] = useState(myTip?.winner ? String(myTip.winner) : "")
+  const saved = {
+    shares: Object.fromEntries(
+      options.map((o) => [o.num, myTip?.filled.includes(o.num) ? toInput(myTip.shares[o.num]) : ""]),
+    ) as Record<number, string>,
+    turnout: toInput(myTip?.turnout),
+    winner: myTip?.winner ? String(myTip.winner) : "",
+  }
+  // A draft left in this browser wins over the saved tip, so unfinished edits are not lost.
+  const [draft] = useState(() => loadDraft(race.id))
+  const [restored, setRestored] = useState(draft !== null)
+  const [shares, setShares] = useState<Record<number, string>>(draft ? { ...saved.shares, ...draft.shares } : saved.shares)
+  const [turnout, setTurnout] = useState(draft?.turnout ?? saved.turnout)
+  const [winner, setWinner] = useState(draft?.winner || saved.winner)
+
+  // Only real differences from the saved tip count as a draft; otherwise there is nothing to remember.
+  const savedJson = JSON.stringify(saved)
+  useEffect(() => {
+    const current = { shares, turnout, winner }
+    if (JSON.stringify(current) === savedJson) clearDraft(race.id)
+    else saveDraft(race.id, current)
+  }, [race.id, shares, turnout, winner, savedJson])
+
+  const discardDraft = () => {
+    setShares(saved.shares)
+    setTurnout(saved.turnout)
+    setWinner(saved.winner)
+    setRestored(false)
+  }
   const [email, setEmail] = useState("")
   const [sort, setSort] = useState<"num" | "name">("num")
   const [token, setToken] = useState("")
@@ -136,6 +160,8 @@ function TipForm({ data, onSaved }: { data: RaceDetail; onSaved: () => void }) {
         },
       })
       if (res.saved) {
+        clearDraft(race.id)
+        setRestored(false)
         toast.success("Tip je uložený.")
         onSaved()
       } else setSent(res)
@@ -169,6 +195,20 @@ function TipForm({ data, onSaved }: { data: RaceDetail; onSaved: () => void }) {
   return (
     <form onSubmit={submit}>
       <FieldGroup>
+        {restored && (
+          <Alert>
+            <AlertTitle>Pokračujete v rozepsaném tipu</AlertTitle>
+            <AlertDescription>
+              Čísla, která jste tu minule nedokončili, jsme si v tomto prohlížeči zapamatovali.
+              {myTip ? " Váš uložený tip platí dál, dokud změny neodešlete." : ""}
+            </AlertDescription>
+            <AlertAction>
+              <Button type="button" variant="outline" size="sm" onClick={discardDraft}>
+                {myTip ? "Vrátit uložený tip" : "Začít znovu"}
+              </Button>
+            </AlertAction>
+          </Alert>
+        )}
         <FieldSet>
           <FieldLegend>{isSenate ? "Kolik procent získají kandidáti v prvním kole" : "Kolik procent hlasů získají"}</FieldLegend>
           <FieldDescription>
@@ -426,6 +466,8 @@ export function RacePage() {
   useEffect(() => {
     if (confirmation) reload()
   }, [confirmation, reload])
+  // Once the link is confirmed the tip is stored on the server, so the browser copy is no longer needed.
+  if (confirmation && id) clearDraft(id)
 
   return (
     <>
