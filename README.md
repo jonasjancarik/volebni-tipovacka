@@ -67,6 +67,9 @@ Před prvním nasazením je potřeba:
 Bez `TURNSTILE_SECRET` produkce tipy od nepřihlášených ani přihlášení nepřijme. Bezpečnostní hlavičky
 stránek jsou v `public/_headers`; kdyby web začal načítat něco z další domény, je potřeba ji tam povolit.
 
+Web běží na `volebnitipovacka.cz` i `tipovacka.jonasjancarik.cz`; obě vlastní domény jsou v `routes`
+ve `wrangler.jsonc`. Při přidání další domény ji povolte také v seznamu hostnames widgetu Turnstile.
+
 ### Automatické nasazení
 
 Každý push do větve `main` nasadí web sám přes Cloudflare Workers Builds. Spouštěč „Deploy main“ je

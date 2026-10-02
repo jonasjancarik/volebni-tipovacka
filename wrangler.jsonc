@@ -3,7 +3,10 @@
   "name": "volebni-tipovacka",
   "main": "worker/index.ts",
   "account_id": "7756b12931ecfb3900a31049e157d706",
-  "routes": [{ "pattern": "tipovacka.jonasjancarik.cz", "custom_domain": true }],
+  "routes": [
+    { "pattern": "tipovacka.jonasjancarik.cz", "custom_domain": true },
+    { "pattern": "volebnitipovacka.cz", "custom_domain": true }
+  ],
   "compatibility_date": "2026-09-01",
   "assets": {
     "not_found_handling": "single-page-application",
