@@ -1,9 +1,12 @@
-import { Hono } from "hono"
+import { Hono, type Context } from "hono"
 import { deleteCookie, getCookie, setCookie } from "hono/cookie"
+import { csrf } from "hono/csrf"
+import { HTTPException } from "hono/http-exception"
 import { secureHeaders } from "hono/secure-headers"
+import { canonicalEmail } from "./email"
 import { randomNickname } from "./nicknames"
 import { importResults } from "./results"
-import { compareScores, expandShares, scoreTip, validateTip, type Shares, type TipInput } from "./scoring"
+import { compareScores, expandShares, scoreTip, validateTip, type Scored, type Shares, type TipInput } from "./scoring"
 
 interface Env {
   DB: D1Database
@@ -37,13 +40,22 @@ interface Race {
   turnout: number | null
   final: number
   winner: number | null
+  results_at: string | null
 }
 
 const SESSION_DAYS = 60
 const LINK_HOURS = 24
 const LEADERBOARD_SIZE = 100
+/** E-mails one address may receive per hour, and how many unconfirmed links it may have waiting. */
+const HOURLY_EMAILS = 5
+const PENDING_LINKS = 10
+const STANDINGS_TTL_MS = 60_000
+const STANDINGS_KEPT = 20
 
-const app = new Hono<{ Bindings: Env; Variables: { user: User | null } }>().basePath("/api")
+type AppEnv = { Bindings: Env; Variables: { user: User | null } }
+type Ctx = Context<AppEnv>
+
+const app = new Hono<AppEnv>().basePath("/api")
 
 const sha256 = async (text: string) => {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text))
@@ -65,6 +77,18 @@ const keyedHash = async (env: Env, text: string) => {
 }
 
 const hashEmail = keyedHash
+
+/**
+ * The hash an address's account lives under. New accounts use the canonical form of the address;
+ * an account created earlier under the address exactly as typed keeps working.
+ */
+async function accountHash(env: Env, email: string) {
+  const typed = await hashEmail(env, email)
+  const canonical = canonicalEmail(email)
+  if (canonical === email) return typed
+  const existing = await env.DB.prepare("SELECT 1 FROM users WHERE email_hash = ?").bind(typed).first()
+  return existing ? typed : hashEmail(env, canonical)
+}
 // The prefix keeps IP hashes apart from e-mail hashes made with the same key.
 const hashIp = (env: Env, ip: string) => keyedHash(env, `ip:${ip}`)
 
@@ -96,6 +120,8 @@ const cleanEmail = (v: unknown) => {
 }
 
 app.use("*", secureHeaders())
+// Rejects form posts from other sites; the session cookie's SameSite setting is the first line of defence.
+app.use("*", csrf())
 app.use("*", async (c, next) => {
   await next()
   c.header("Cache-Control", "no-store")
@@ -116,6 +142,7 @@ app.use("*", async (c, next) => {
 })
 
 app.onError((err, c) => {
+  if (err instanceof HTTPException) return c.json({ error: "Tenhle požadavek jsme nemohli přijmout." }, err.status)
   console.error(err)
   return c.json({ error: "Něco se pokazilo. Zkuste to prosím za chvíli znovu." }, 500)
 })
@@ -159,6 +186,10 @@ app.get("/senate", async (c) => {
   return c.json(results)
 })
 
+type TipRow = { user_id: number; nickname: string; turnout: number; shares: string; winner: number | null }
+type Ranked = { row: TipRow; tip: TipInput & { filled: number[] }; score: Scored }
+const standings = new Map<string, { resultsAt: string | null; at: number; ranked: Ranked[] }>()
+
 app.get("/races/:id", async (c) => {
   const db = c.env.DB
   const id = c.req.param("id")
@@ -176,7 +207,6 @@ app.get("/races/:id", async (c) => {
   const open = isOpen(c.env)
   const hasResults = !open && (race.counted_pct ?? 0) > 0
 
-  type TipRow = { user_id: number; nickname: string; turnout: number; shares: string; winner: number | null }
   const nums = options.map((o) => o.num)
   // Stored tips hold only the filled-in shares; `filled` lets the form show which ones those were.
   const readTip = (row: { turnout: number; shares: string; winner: number | null }) => {
@@ -194,28 +224,36 @@ app.get("/races/:id", async (c) => {
   let myRank: number | null = null
 
   if (hasResults) {
-    // Tips are few per race, so ranking on read keeps the standings current without rewriting scores.
-    const rows = (
-      await db
-        .prepare(
-          `SELECT t.user_id, u.nickname, t.turnout, t.shares, t.winner
-           FROM tips t JOIN users u ON u.id = t.user_id WHERE t.race_id = ?`
-        )
-        .bind(id)
-        .all<TipRow>()
-    ).results
-    tipCount = rows.length
-    const actual = {
-      pcts: Object.fromEntries(options.map((o) => [String(o.num), o.pct])),
-      turnout: race.turnout ?? 0,
-      winner: race.winner,
+    // Ranking happens on read so the standings follow the count. The result is kept for a minute per
+    // race, because tips no longer change and a busy race would otherwise be re-read on every view.
+    const kept = standings.get(id)
+    let ranked =
+      kept && kept.resultsAt === race.results_at && Date.now() - kept.at < STANDINGS_TTL_MS ? kept.ranked : null
+    if (!ranked) {
+      const rows = (
+        await db
+          .prepare(
+            `SELECT t.user_id, u.nickname, t.turnout, t.shares, t.winner
+             FROM tips t JOIN users u ON u.id = t.user_id WHERE t.race_id = ?`
+          )
+          .bind(id)
+          .all<TipRow>()
+      ).results
+      const actual = {
+        pcts: Object.fromEntries(options.map((o) => [String(o.num), o.pct])),
+        turnout: race.turnout ?? 0,
+        winner: race.winner,
+      }
+      ranked = rows
+        .map((row) => {
+          const tip = readTip(row)
+          return { row, tip, score: scoreTip(tip, actual) }
+        })
+        .sort((a, b) => compareScores(a.score, b.score))
+      if (standings.size >= STANDINGS_KEPT) standings.clear()
+      standings.set(id, { resultsAt: race.results_at, at: Date.now(), ranked })
     }
-    const ranked = rows
-      .map((row) => {
-        const tip = readTip(row)
-        return { row, tip, score: scoreTip(tip, actual) }
-      })
-      .sort((a, b) => compareScores(a.score, b.score))
+    tipCount = ranked.length
     const mine = ranked.findIndex((r) => r.row.user_id === user?.id)
     if (mine >= 0) {
       myRank = mine + 1
@@ -266,10 +304,7 @@ async function saveTip(db: D1Database, userId: number, raceId: string, tip: TipI
     .run()
 }
 
-async function verifyTurnstile(
-  c: { env: Env; req: { url: string; header(name: string): string | undefined } },
-  token: unknown
-) {
+async function verifyTurnstile(c: Ctx, token: unknown) {
   const env = c.env
   if (!env.TURNSTILE_SECRET) {
     if (isDev(env, c.req.url)) return true
@@ -283,25 +318,38 @@ async function verifyTurnstile(
   return ((await res.json()) as { success: boolean }).success
 }
 
-/** Creates a confirmation link and e-mails it. Returns an error message for the user, or the link in dev mode. */
+/**
+ * Creates a confirmation link and e-mails it. Returns an error message for the user, or the link in dev mode.
+ * `delivery` is "wait" to report a failed send, "background" to answer before the e-mail leaves, and "none"
+ * to only count the request against the limits. The last two let sign-in answer the same way, and as fast,
+ * for addresses with and without an account.
+ */
 async function sendLink(
-  c: { env: Env; req: { url: string; header(name: string): string | undefined } },
+  c: Ctx,
   email: string,
-  payload: { raceId: string; raceName: string; tip: TipInput } | null
+  payload: { raceId: string; raceName: string; tip: TipInput } | null,
+  delivery: "wait" | "background" | "none" = "wait"
 ): Promise<{ error?: string; devLink?: string }> {
   const env = c.env
   const ip = c.req.header("cf-connecting-ip") ?? "local"
   const ipHash = await hashIp(env, ip)
-  const emailHash = await hashEmail(env, email)
+  const emailHash = await accountHash(env, email)
+  const nowIso = new Date().toISOString()
   const hourAgo = new Date(Date.now() - 3600_000).toISOString()
   const recent = await env.DB.prepare(
-    `SELECT SUM(email_hash = ?1) AS by_email, SUM(ip_hash = ?2) AS by_ip FROM magic_links
-     WHERE created_at > ?3 AND (email_hash = ?1 OR ip_hash = ?2)`
+    `SELECT SUM(email_hash = ?1 AND created_at > ?3) AS by_email, SUM(ip_hash = ?2 AND created_at > ?3) AS by_ip,
+       SUM(email_hash = ?1 AND expires_at > ?4) AS pending
+     FROM magic_links WHERE (email_hash = ?1 OR ip_hash = ?2) AND (created_at > ?3 OR expires_at > ?4)`
   )
-    .bind(emailHash, ipHash, hourAgo)
-    .first<{ by_email: number | null; by_ip: number | null }>()
-  if ((recent?.by_email ?? 0) >= 5 || (recent?.by_ip ?? 0) >= 30)
+    .bind(emailHash, ipHash, hourAgo, nowIso)
+    .first<{ by_email: number | null; by_ip: number | null; pending: number | null }>()
+  if ((recent?.by_email ?? 0) >= HOURLY_EMAILS || (recent?.by_ip ?? 0) >= 30)
     return { error: "Poslali jsme vám už několik e-mailů. Zkuste to prosím znovu za hodinu." }
+  // Without this a stranger could keep one address receiving e-mails all day, five every hour.
+  if ((recent?.pending ?? 0) >= PENDING_LINKS)
+    return {
+      error: "Na tuhle adresu už čeká několik nepotvrzených e-mailů. Otevřete některý z nich, nebo to zkuste zítra.",
+    }
 
   // A returning tipper keeps their nickname. A new one gets a generated nickname, reused across
   // their pending links so every e-mail they receive names the same one.
@@ -312,9 +360,10 @@ async function sendLink(
        WHERE email_hash = ?1 AND nickname IS NOT NULL AND expires_at > ?2 ORDER BY created_at DESC LIMIT 1)
      LIMIT 1`
   )
-    .bind(emailHash, new Date().toISOString())
+    .bind(emailHash, nowIso)
     .first<{ nickname: string }>()
-  const nickname = known?.nickname ?? randomNickname()
+  // A link that is never sent carries no nickname, so it can neither be confirmed nor name a future account.
+  const nickname = delivery === "none" ? null : (known?.nickname ?? randomNickname())
 
   const token = randomToken()
   const now = Date.now()
@@ -328,9 +377,10 @@ async function sendLink(
       payload && JSON.stringify(payload),
       ipHash,
       new Date(now).toISOString(),
-      new Date(now + LINK_HOURS * 3600_000).toISOString()
+      new Date(now + (delivery === "none" ? 1 : LINK_HOURS) * 3600_000).toISOString()
     )
     .run()
+  if (delivery === "none" || !nickname) return {}
 
   const origin = new URL(c.req.url).origin
   const link = `${origin}/potvrzeni?token=${token}`
@@ -364,7 +414,18 @@ async function sendLink(
 <p>V pořadí tipujících vystupujete pod přezdívkou <strong>${escapeHtml(nickname)}</strong>.</p>
 <p>Přehled všech svých tipů najdete na <a href="${overview}">${overview}</a>. Na jiném zařízení se k němu přihlásíte stejnou e-mailovou adresou.</p>
 <p>Odkaz na ${payload ? "potvrzení" : "přihlášení"} platí ${LINK_HOURS} hodin. Pokud jste o něj nežádali, e-mail prostě ignorujte.</p><p>Volební tipovačka</p>`
-  await env.EMAIL.send({ to: email, from: { email: env.MAIL_FROM, name: "Volební tipovačka" }, subject, text, html })
+  // The address must not reach the logs, and a provider's error message may quote it.
+  const sending = env.EMAIL.send({
+    to: email,
+    from: { email: env.MAIL_FROM, name: "Volební tipovačka" },
+    subject,
+    text,
+    html,
+  }).catch((err) => {
+    throw new Error(`E-mail could not be sent: ${String(err).replaceAll(email, "<address>")}`)
+  })
+  if (delivery === "background") c.executionCtx.waitUntil(sending.catch((err) => console.error(err)))
+  else await sending
   return {}
 }
 
@@ -404,12 +465,12 @@ app.post("/login", async (c) => {
   if (!email) return c.json({ error: "Zadejte platnou e-mailovou adresu." }, 400)
   if (!(await verifyTurnstile(c, body.turnstileToken)))
     return c.json({ error: "Nepodařilo se ověřit, že nejste robot. Zkuste to prosím znovu." }, 400)
-  // Same answer whether or not the address has tips, so the form does not reveal who takes part.
+  // Same answer whether or not the address has tips, so the form does not reveal who takes part:
+  // both cases count against the same limits and neither waits for the e-mail to leave.
   const known = await c.env.DB.prepare("SELECT 1 FROM users WHERE email_hash = ?")
-    .bind(await hashEmail(c.env, email))
+    .bind(await accountHash(c.env, email))
     .first()
-  if (!known) return c.json({ emailSent: true })
-  const sent = await sendLink(c, email, null)
+  const sent = await sendLink(c, email, null, known ? "background" : "none")
   if (sent.error) return c.json({ error: sent.error }, 429)
   return c.json({ emailSent: true, devLink: sent.devLink })
 })

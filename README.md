@@ -15,10 +15,13 @@ se výsledky stahují z otevřených dat ČSÚ a u každé obce vzniká pořadí
   poštovní server, který odkazy sám otevírá.
   E-mailové adresy se neukládají, jen jejich otisk (HMAC s tajným klíčem `EMAIL_HASH_KEY`). Klíč se nesmí
   změnit, jinak se nikdo nepřihlásí ke svým tipům.
+- **Jedna schránka, jeden účet:** `jmeno+cokoli@…` se počítá jako `jmeno@…` a u Gmailu se ignorují tečky
+  (`worker/email.ts`). Na jednu adresu odejde nejvýš 5 e-mailů za hodinu a může na ni čekat nejvýš
+  10 nepotvrzených odkazů.
 - **Uzávěrka:** `DEADLINE` ve `wrangler.jsonc` (pátek 9. 10. ve 14:00). Do té doby jsou cizí tipy skryté.
 - **Výsledky:** cron každé 2 minuty od `POLLS_CLOSE` stahuje senátní feed a feedy obcí, kde někdo tipoval
   (`worker/results.ts`). Pořadí se počítá při zobrazení jako průměrná odchylka v procentních bodech,
-  při shodě rozhoduje odhad účasti (`worker/scoring.ts`).
+  při shodě rozhoduje odhad účasti (`worker/scoring.ts`). Spočítané pořadí se minutu drží v paměti.
 
 Vynechaný je Lišov, jediná obec rozdělená na více volebních obvodů, a jedna obec bez kandidátní listiny.
 
