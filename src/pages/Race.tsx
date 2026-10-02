@@ -18,29 +18,13 @@ import { Spinner } from "@/components/ui/spinner"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { api, pct, tipsLabel, type RaceDetail } from "@/lib/api"
+import { randomNickname } from "@/lib/nicknames"
 import { cn } from "@/lib/utils"
 
 const toNumber = (s: string) => Number(s.replace(",", ".").trim() || 0)
 const toInput = (n: number | undefined) => (n === undefined ? "" : String(n).replace(".", ","))
 const round1 = (n: number) => Math.round(n * 10) / 10
 
-// Large enough that two tippers almost never get the same nickname, so uniqueness is not enforced.
-const ADJECTIVES = [
-  "Zvědavý", "Odvážný", "Tichý", "Veselý", "Bystrý", "Rozvážný", "Neúnavný", "Poctivý",
-  "Hloubavý", "Šťastný", "Trpělivý", "Mazaný", "Klidný", "Pilný", "Vytrvalý", "Důvtipný",
-  "Zamyšlený", "Rozverný", "Ostražitý", "Skromný", "Hbitý", "Laskavý", "Bdělý", "Upřímný",
-  "Nezdolný", "Vlídný", "Zvídavý", "Smělý", "Moudrý", "Čilý", "Hravý", "Rázný",
-  "Ospalý", "Pohotový", "Věrný", "Statečný", "Usměvavý", "Důkladný", "Svižný", "Pozorný",
-]
-const ANIMALS = [
-  "jezevec", "sokol", "kapr", "rys", "čáp", "bobr", "ježek", "výr",
-  "kamzík", "křeček", "datel", "zubr", "havran", "jelen", "ledňáček", "sysel",
-  "tetřev", "mlok", "plch", "krtek", "losos", "hranostaj", "kos", "dudek",
-  "svišť", "vlk", "medvěd", "čmelák", "strakapoud", "daněk", "muflon", "zajíc",
-  "jestřáb", "káně", "rorýs", "skřivan", "candát", "pstruh", "lumík", "netopýr",
-]
-const pick = (list: string[]) => list[Math.floor(Math.random() * list.length)]
-const randomNickname = () => `${pick(ADJECTIVES)} ${pick(ANIMALS)} ${Math.floor(Math.random() * 900) + 100}`
 
 /** Thin horizontal bar; `scale` is the value that fills the whole width. */
 function ShareBar({ value, scale, muted }: { value: number; scale: number; muted?: boolean }) {
