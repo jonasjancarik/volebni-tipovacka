@@ -48,6 +48,16 @@ export function App() {
                   Přihlásit se
                 </Button>
               )}
+              <Button
+                variant="ghost"
+                size="sm"
+                nativeButton={false}
+                render={
+                  <a href="https://github.com/jonasjancarik/volebni-tipovacka" target="_blank" rel="noreferrer" />
+                }
+              >
+                GitHub
+              </Button>
             </nav>
           </header>
           <main className="flex flex-1 flex-col gap-8 pb-16">
