@@ -410,11 +410,44 @@ async function sendLink(
     ``,
     `Volební tipovačka`,
   ].join("\n")
-  const html = `<p>Dobrý den,</p><p>tímto odkazem můžete ${escapeHtml(action)}:</p>
-<p><a href="${link}">${payload ? "Potvrdit tip" : "Přihlásit se"}</a></p>
-<p>V pořadí tipujících vystupujete pod přezdívkou <strong>${escapeHtml(nickname)}</strong>.</p>
-<p>Přehled všech svých tipů najdete na <a href="${overview}">${overview}</a>. Na jiném zařízení se k němu přihlásíte stejnou e-mailovou adresou.</p>
-<p>Odkaz na ${payload ? "potvrzení" : "přihlášení"} platí ${LINK_HOURS} hodin. Pokud jste o něj nežádali, e-mail prostě ignorujte.</p><p>Volební tipovačka</p>`
+  const kind = payload ? "potvrzení" : "přihlášení"
+  const button = payload ? "Potvrdit tip" : "Přihlásit se"
+  const heading = payload ? "Potvrďte svůj tip" : "Přihlášení do Volební tipovačky"
+  const font = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
+  const summary = payload
+    ? `<tr><td style="padding:0 32px 28px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f6f6f4;border-radius:12px;">
+<tr><td style="padding:16px 20px 4px;font-size:12px;letter-spacing:.8px;text-transform:uppercase;color:#8a8a85;">Váš tip pro</td></tr>
+<tr><td style="padding:0 20px 14px;font-size:18px;font-weight:600;color:#111111;">${escapeHtml(payload.raceName)}</td></tr>
+<tr><td style="padding:0 20px 4px;font-size:12px;letter-spacing:.8px;text-transform:uppercase;color:#8a8a85;border-top:1px solid #e7e7e3;padding-top:14px;">Vystupujete jako</td></tr>
+<tr><td style="padding:0 20px 16px;font-size:18px;font-weight:600;color:#111111;">${escapeHtml(nickname)}</td></tr>
+</table></td></tr>`
+    : `<tr><td style="padding:0 32px 28px;font-size:15px;line-height:1.55;color:#4b4b47;">V pořadí tipujících vystupujete pod přezdívkou <strong style="color:#111111;">${escapeHtml(nickname)}</strong>.</td></tr>`
+  const html = `<!doctype html>
+<html lang="cs"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#ecece8;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ecece8;padding:32px 12px;">
+<tr><td align="center" style="font-family:${font};">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;">
+<tr><td style="padding:0 4px 16px;font-family:${font};font-size:15px;font-weight:700;color:#111111;letter-spacing:.2px;">
+<span style="display:inline-block;width:22px;height:22px;line-height:22px;text-align:center;background:#111111;color:#ffffff;border-radius:6px;font-size:13px;margin-right:8px;">&#10003;</span>Volební tipovačka</td></tr>
+<tr><td style="background:#ffffff;border-radius:16px;border:1px solid #e0e0db;font-family:${font};color:#1f1f1d;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+<tr><td style="padding:36px 32px 12px;font-size:26px;line-height:1.25;font-weight:700;color:#111111;">${escapeHtml(heading)}</td></tr>
+<tr><td style="padding:0 32px 28px;font-size:16px;line-height:1.6;color:#4b4b47;">Dobrý den, stačí jedno kliknutí${payload ? " a váš tip se uloží" : " a budete přihlášeni"}.</td></tr>
+${summary}
+<tr><td style="padding:0 32px 32px;"><table role="presentation" cellpadding="0" cellspacing="0"><tr><td style="background:#111111;border-radius:10px;">
+<a href="${link}" style="display:inline-block;padding:15px 32px;font-size:16px;font-weight:600;color:#ffffff;text-decoration:none;">${button} &rarr;</a>
+</td></tr></table></td></tr>
+<tr><td style="padding:0 32px 32px;font-size:14px;line-height:1.6;color:#4b4b47;border-top:1px solid #eeeeea;padding-top:24px;">
+Přehled všech svých tipů najdete na <a href="${overview}" style="color:#111111;font-weight:600;">${overview.replace(/^https?:\/\//, "")}</a>. Na jiném zařízení se k němu přihlásíte stejnou e-mailovou adresou.</td></tr>
+</table></td></tr>
+<tr><td style="padding:20px 8px 0;font-family:${font};font-size:12px;line-height:1.6;color:#8a8a85;">
+Odkaz na ${kind} platí ${LINK_HOURS} hodin. Pokud jste o něj nežádali, e-mail prostě ignorujte.<br>
+Tlačítko nefunguje? Zkopírujte si tuto adresu do prohlížeče:<br><span style="word-break:break-all;">${link}</span>
+</td></tr>
+</table>
+</td></tr></table>
+</body></html>`
   // The address must not reach the logs, and a provider's error message may quote it.
   const sending = env.EMAIL.send({
     to: email,
