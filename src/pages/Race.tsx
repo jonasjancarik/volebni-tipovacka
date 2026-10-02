@@ -105,6 +105,8 @@ function TipForm({ data, onSaved }: { data: RaceDetail; onSaved: () => void }) {
   const [token, setToken] = useState("")
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
+  // Set once the tipper tries to send an unfinished form; from then on the missing parts are highlighted.
+  const [attempted, setAttempted] = useState(false)
   const [sent, setSent] = useState<{ devLink?: string } | null>(null)
 
   const collator = new Intl.Collator("cs")
@@ -118,7 +120,6 @@ function TipForm({ data, onSaved }: { data: RaceDetail; onSaved: () => void }) {
   // Whatever is left over is split equally among the fields the tipper skipped.
   const each = blanks > 0 && remaining >= 0 ? remaining / blanks : 0
   const sharesOk = !invalidValue && filled.length > 0 && remaining >= 0 && (blanks > 0 || remaining === 0)
-  const complete = sharesOk && turnout.trim() !== "" && (!isSenate || winner !== "")
   // Offered when the entered shares cannot add up to 100: scales them down (or up) keeping their proportions.
   const canRescale = !invalidValue && sum > 0 && (remaining < 0 || (blanks === 0 && remaining > 0))
   const rescale = () => {
@@ -154,8 +155,32 @@ function TipForm({ data, onSaved }: { data: RaceDetail; onSaved: () => void }) {
               ? `Zbylých ${pct(remaining)} připadne na jedinou nevyplněnou položku.`
               : `Zbylých ${pct(remaining)} rozdělíme rovným dílem mezi ${blanks} ${blanks < 5 ? "nevyplněné položky" : "nevyplněných položek"}, na každou vyjde ${pct(each, 2)}.`
 
+  const emailOk = /^\S+@\S+\.\S+$/.test(email.trim())
+  const needsCaptcha = !config?.me && !!config?.turnstileSiteKey && !token
+  const turnoutValue = toNumber(turnout)
+  const turnoutMissing = turnout.trim() === "" || !Number.isFinite(turnoutValue) || turnoutValue > 100
+  // Each problem points at the element to scroll to, in page order.
+  const problems = [
+    !sharesOk && { target: "share-section", text: status },
+    turnoutMissing && {
+      target: "turnout",
+      text: turnoutValue > 100 ? "Volební účast nemůže být větší než 100 %." : "Doplňte odhad volební účasti.",
+    },
+    isSenate && winner === "" && { target: "winner", text: "Vyberte, kdo se stane senátorem." },
+    !config?.me && !emailOk && { target: "email", text: "Zadejte e-mail, na který pošleme potvrzení." },
+    needsCaptcha && { target: "captcha", text: "Potvrďte, že nejste robot." },
+  ].filter((p): p is { target: string; text: string } => p !== false)
+  const showProblems = attempted && problems.length > 0
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (problems.length > 0) {
+      setAttempted(true)
+      const el = document.getElementById(problems[0].target)
+      el?.scrollIntoView({ behavior: "smooth", block: "center" })
+      el?.focus({ preventScroll: true })
+      return
+    }
     setBusy(true)
     setError("")
     try {
@@ -203,7 +228,7 @@ function TipForm({ data, onSaved }: { data: RaceDetail; onSaved: () => void }) {
   }
 
   return (
-    <form onSubmit={submit}>
+    <form onSubmit={submit} noValidate>
       <FieldGroup>
         {restored && (
           <Alert>
@@ -219,7 +244,7 @@ function TipForm({ data, onSaved }: { data: RaceDetail; onSaved: () => void }) {
             </AlertAction>
           </Alert>
         )}
-        <FieldSet>
+        <FieldSet id="share-section" tabIndex={-1} className="scroll-mt-4 outline-none">
           <FieldLegend>
             {isSenate ? "Kolik procent získají kandidáti v prvním kole" : "Kolik procent hlasů získají"}
           </FieldLegend>
@@ -285,7 +310,10 @@ function TipForm({ data, onSaved }: { data: RaceDetail; onSaved: () => void }) {
           <div className="sticky bottom-0 flex flex-col gap-2 border-t bg-background py-3">
             <Progress value={Math.min(sum, 100)} />
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-sm" aria-live="polite">
+              <p
+                className={cn("text-sm", showProblems && !sharesOk && "font-medium text-destructive")}
+                aria-live="polite"
+              >
                 {status}
               </p>
               {canRescale && (
@@ -306,7 +334,10 @@ function TipForm({ data, onSaved }: { data: RaceDetail; onSaved: () => void }) {
         {isSenate && (
           <Field>
             <FieldLabel htmlFor="winner">Kdo se stane senátorem</FieldLabel>
-            <NativeSelect id="winner" value={winner} onChange={(e) => setWinner(e.target.value)}>
+            <NativeSelect
+              id="winner"
+              value={winner}
+              aria-invalid={(attempted && winner === "") || undefined} onChange={(e) => setWinner(e.target.value)}>
               <NativeSelectOption value="">Vyberte kandidáta</NativeSelectOption>
               {options.map((o) => (
                 <NativeSelectOption key={o.num} value={o.num}>
@@ -320,7 +351,12 @@ function TipForm({ data, onSaved }: { data: RaceDetail; onSaved: () => void }) {
 
         <Field>
           <FieldLabel htmlFor="turnout">Volební účast</FieldLabel>
-          <PercentInput id="turnout" value={turnout} onChange={setTurnout} invalid={toNumber(turnout) > 100} />
+          <PercentInput
+            id="turnout"
+            value={turnout}
+            onChange={setTurnout}
+            invalid={turnoutValue > 100 || (attempted && turnoutMissing)}
+          />
           <FieldDescription>
             {isSenate ? "Účast v prvním kole. Rozhoduje při shodě v pořadí." : "Rozhoduje při shodě v pořadí."}
           </FieldDescription>
@@ -335,6 +371,7 @@ function TipForm({ data, onSaved }: { data: RaceDetail; onSaved: () => void }) {
                 type="email"
                 required
                 autoComplete="email"
+                aria-invalid={(attempted && !emailOk) || undefined}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />
@@ -343,8 +380,25 @@ function TipForm({ data, onSaved }: { data: RaceDetail; onSaved: () => void }) {
                 poznáme.
               </FieldDescription>
             </Field>
-            {config?.turnstileSiteKey && <Turnstile siteKey={config.turnstileSiteKey} onToken={setToken} />}
+            {config?.turnstileSiteKey && (
+              <div id="captcha" tabIndex={-1} className="outline-none">
+                <Turnstile siteKey={config.turnstileSiteKey} onToken={setToken} />
+              </div>
+            )}
           </>
+        )}
+
+        {showProblems && (
+          <Alert variant="destructive" role="alert">
+            <AlertTitle>Ještě chybí</AlertTitle>
+            <AlertDescription>
+              <ul className="list-disc pl-4">
+                {problems.map((p) => (
+                  <li key={p.target}>{p.text}</li>
+                ))}
+              </ul>
+            </AlertDescription>
+          </Alert>
         )}
 
         {error && (
@@ -354,7 +408,7 @@ function TipForm({ data, onSaved }: { data: RaceDetail; onSaved: () => void }) {
         )}
 
         <Field orientation="horizontal">
-          <Button type="submit" disabled={busy || !complete}>
+          <Button type="submit" disabled={busy} className={cn(problems.length > 0 && "opacity-60")}>
             {busy && <Spinner data-icon="inline-start" />}
             {myTip ? "Uložit změny" : "Odeslat tip"}
           </Button>
