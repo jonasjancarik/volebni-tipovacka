@@ -73,7 +73,8 @@ function TipForm({ data, onSaved }: { data: RaceDetail; onSaved: () => void }) {
     shares: Object.fromEntries(
       options.map((o) => [o.num, myTip?.filled.includes(o.num) ? toInput(myTip.shares[o.num]) : ""])
     ) as Record<number, string>,
-    turnout: toInput(myTip?.turnout),
+    // Start from a middle-of-the-road guess; most tippers only nudge it.
+    turnout: myTip ? toInput(myTip.turnout) : "50",
     winner: myTip?.winner ? String(myTip.winner) : "",
   }
   // A draft left in this browser wins over the saved tip, so unfinished edits are not lost.
@@ -351,6 +352,15 @@ function TipForm({ data, onSaved }: { data: RaceDetail; onSaved: () => void }) {
 
         <Field>
           <FieldLabel htmlFor="turnout">Volební účast</FieldLabel>
+          {dragMode && (
+            <ShareSlider
+              label="Odhad volební účasti"
+              value={Number.isFinite(turnoutValue) ? turnoutValue : 0}
+              scale={100}
+              max={100}
+              onChange={(v) => setTurnout(toInput(v))}
+            />
+          )}
           <PercentInput
             id="turnout"
             value={turnout}
