@@ -94,4 +94,17 @@ describe("tips", () => {
     expect(close.error).toBe(2)
     expect([far, close, closeBetterTurnout].sort(compareScores)).toEqual([closeBetterTurnout, close, far])
   })
+
+  it("counts the same miss more for a small list than for a big one", () => {
+    const actual = { pcts: { 1: 20, 2: 5, 3: 75 }, turnout: 50, winner: null }
+    const offAtBig = scoreTip({ shares: { 1: 23, 2: 5, 3: 75 }, turnout: 50, winner: null }, actual)
+    const offAtSmall = scoreTip({ shares: { 1: 20, 2: 8, 3: 75 }, turnout: 50, winner: null }, actual)
+    expect(offAtSmall.error / offAtBig.error).toBeCloseTo(2)
+  })
+
+  it("weights lists with no votes like lists with 1 %", () => {
+    const actual = { pcts: { 1: 100, 2: 0 }, turnout: 50, winner: null }
+    const score = scoreTip({ shares: { 1: 99, 2: 1 }, turnout: 50, winner: null }, actual)
+    expect(score.error).toBeCloseTo(1)
+  })
 })

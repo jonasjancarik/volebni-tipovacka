@@ -20,7 +20,8 @@ se výsledky stahují z otevřených dat ČSÚ a u každé obce vzniká pořadí
   10 nepotvrzených odkazů.
 - **Uzávěrka:** `DEADLINE` ve `wrangler.jsonc` (pátek 9. 10. ve 14:00). Do té doby jsou cizí tipy skryté.
 - **Výsledky:** cron každé 2 minuty od `POLLS_CLOSE` stahuje senátní feed a feedy obcí, kde někdo tipoval
-  (`worker/results.ts`). Pořadí se počítá při zobrazení jako průměrná odchylka v procentních bodech,
+  (`worker/results.ts`). Pořadí se počítá při zobrazení jako vážená průměrná odchylka v procentních bodech
+  (omyl u menší listiny váží víc, váha je 1/√ skutečného výsledku),
   při shodě rozhoduje odhad účasti (`worker/scoring.ts`). Spočítané pořadí se minutu drží v paměti.
 
 - **Návštěvnost:** bez cookies a bez identifikátorů návštěvníků. Stránka po každém zobrazení zavolá

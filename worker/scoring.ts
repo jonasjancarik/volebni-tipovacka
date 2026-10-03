@@ -51,8 +51,15 @@ export function expandShares(filled: Shares, nums: number[]): Shares {
   return Object.fromEntries(nums.map((n) => [String(n), filled[String(n)] ?? each]))
 }
 
+/**
+ * The same miss matters more for a small list than for a big one: the weight falls with the square root of the
+ * real result, so 3 points off at 5 % count twice as much as 3 points off at 20 %. Everything under 1 % is
+ * weighted as 1 %, which keeps the tiniest lists from deciding the ranking.
+ */
+const missWeight = (real: number) => 1 / Math.sqrt(Math.max(real, 1))
+
 export interface Scored {
-  /** Average distance from the real result in percentage points; lower is better. */
+  /** Weighted average distance from the real result in percentage points; lower is better. */
   error: number
   turnoutError: number
   winnerHit: boolean | null
@@ -63,13 +70,20 @@ export function scoreTip(
   actual: { pcts: Record<string, number | null>; turnout: number; winner: number | null }
 ): Scored {
   const nums = Object.keys(actual.pcts)
-  const total = nums.reduce((a, n) => a + Math.abs((tip.shares[n] ?? 0) - (actual.pcts[n] ?? 0)), 0)
+  let total = 0
+  let weights = 0
+  for (const n of nums) {
+    const real = actual.pcts[n] ?? 0
+    const weight = missWeight(real)
+    total += weight * Math.abs((tip.shares[n] ?? 0) - real)
+    weights += weight
+  }
   return {
-    error: nums.length ? total / nums.length : 0,
+    error: weights ? total / weights : 0,
     turnoutError: Math.abs(tip.turnout - actual.turnout),
     winnerHit: actual.winner == null || tip.winner == null ? null : tip.winner === actual.winner,
   }
 }
 
-/** Best tip first: smallest average error, then closest turnout. */
+/** Best tip first: smallest weighted error, then closest turnout. */
 export const compareScores = (a: Scored, b: Scored) => a.error - b.error || a.turnoutError - b.turnoutError

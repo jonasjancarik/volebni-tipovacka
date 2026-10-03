@@ -33,7 +33,10 @@ function ShareBar({ value, scale, muted }: { value: number; scale: number; muted
   return (
     <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted" aria-hidden>
       <div
-        className={cn("h-full rounded-full transition-[width]", muted ? "bg-muted-foreground/35" : "bg-gradient-to-r from-primary to-[oklch(0.72_0.14_80)]")}
+        className={cn(
+          "h-full rounded-full transition-[width]",
+          muted ? "bg-muted-foreground/35" : "bg-gradient-to-r from-primary to-[oklch(0.72_0.14_80)]"
+        )}
         style={{ width: `${width}%` }}
       />
     </div>
@@ -338,7 +341,9 @@ function TipForm({ data, onSaved }: { data: RaceDetail; onSaved: () => void }) {
             <NativeSelect
               id="winner"
               value={winner}
-              aria-invalid={(attempted && winner === "") || undefined} onChange={(e) => setWinner(e.target.value)}>
+              aria-invalid={(attempted && winner === "") || undefined}
+              onChange={(e) => setWinner(e.target.value)}
+            >
               <NativeSelectOption value="">Vyberte kandidáta</NativeSelectOption>
               {options.map((o) => (
                 <NativeSelectOption key={o.num} value={o.num}>
@@ -504,7 +509,7 @@ function Results({ data }: { data: RaceDetail }) {
             <p className="text-sm text-muted-foreground">
               {leaderboard.length === 0
                 ? "Tady nikdo netipoval."
-                : `${race.final ? "" : "Průběžné pořadí, mění se se sčítáním. "}Odchylka říká, o kolik procentních bodů se tip v průměru spletl.${myRank ? ` Jste na ${myRank}. místě.` : ""}`}
+                : `${race.final ? "" : "Průběžné pořadí, mění se se sčítáním. "}Odchylka říká, o kolik procentních bodů se tip v průměru spletl. Omyly u menších listin se počítají víc.${myRank ? ` Jste na ${myRank}. místě.` : ""}`}
             </p>
           </div>
           {leaderboard.length > 0 && (

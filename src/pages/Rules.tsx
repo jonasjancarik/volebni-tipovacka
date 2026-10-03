@@ -40,6 +40,12 @@ export function Rules() {
           senátních voleb navíc v pořadí ukazujeme, kdo správně určil vítěze.
         </p>
         <p>
+          Stejně velký omyl se u malé listiny počítá víc než u velké, protože splést se o 3 body u někoho, kdo získal 5
+          %, je hrubší chyba než u někoho s 20 %. V průměru má proto každý rozdíl váhu podle skutečného výsledku: omyl u
+          listiny s 5 % hlasů se započítá dvakrát silněji než stejný omyl u listiny s 20 % a třikrát silněji než u
+          listiny se 45 %. Listiny pod 1 % se počítají stejně jako ty s 1 %.
+        </p>
+        <p>
           Výsledky přebíráme z průběžně zveřejňovaných dat Českého statistického úřadu, takže se pořadí během sčítání
           mění. Konečné je po sečtení všech okrsků.
         </p>
