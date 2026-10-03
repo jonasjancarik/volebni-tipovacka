@@ -52,15 +52,17 @@ export function expandShares(filled: Shares, nums: number[]): Shares {
 }
 
 /**
- * The same miss matters more for a small list than for a big one: the weight falls with the square root of the
- * real result, so 3 points off at 5 % count twice as much as 3 points off at 20 %. Everything under 1 % is
+ * Used for the second, weighted ranking, where the same miss matters more for a small list than for a big one: the
+ * weight falls with the square root of the real result, so 3 points off at 5 % count twice as much as 3 points off at 20 %. Everything under 1 % is
  * weighted as 1 %, which keeps the tiniest lists from deciding the ranking.
  */
 const missWeight = (real: number) => 1 / Math.sqrt(Math.max(real, 1))
 
 export interface Scored {
-  /** Weighted average distance from the real result in percentage points; lower is better. */
+  /** Average distance from the real result in percentage points; lower is better. Decides the main ranking. */
   error: number
+  /** The same average with misses on smaller lists counting more; decides the second ranking. */
+  weightedError: number
   turnoutError: number
   winnerHit: boolean | null
 }
@@ -71,19 +73,27 @@ export function scoreTip(
 ): Scored {
   const nums = Object.keys(actual.pcts)
   let total = 0
+  let weightedTotal = 0
   let weights = 0
   for (const n of nums) {
     const real = actual.pcts[n] ?? 0
+    const miss = Math.abs((tip.shares[n] ?? 0) - real)
     const weight = missWeight(real)
-    total += weight * Math.abs((tip.shares[n] ?? 0) - real)
+    total += miss
+    weightedTotal += weight * miss
     weights += weight
   }
   return {
-    error: weights ? total / weights : 0,
+    error: nums.length ? total / nums.length : 0,
+    weightedError: weights ? weightedTotal / weights : 0,
     turnoutError: Math.abs(tip.turnout - actual.turnout),
     winnerHit: actual.winner == null || tip.winner == null ? null : tip.winner === actual.winner,
   }
 }
 
-/** Best tip first: smallest weighted error, then closest turnout. */
+/** Best tip first: smallest average error, then closest turnout. */
 export const compareScores = (a: Scored, b: Scored) => a.error - b.error || a.turnoutError - b.turnoutError
+
+/** The same for the weighted ranking. */
+export const compareWeightedScores = (a: Scored, b: Scored) =>
+  a.weightedError - b.weightedError || a.turnoutError - b.turnoutError

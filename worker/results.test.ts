@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import { parseCouncil, parseSenate } from "./results"
-import { compareScores, expandShares, scoreTip, validateTip } from "./scoring"
+import { compareScores, compareWeightedScores, expandShares, scoreTip, validateTip } from "./scoring"
 
 const fixture = (name: string) => readFileSync(`worker/fixtures/${name}`, "utf8")
 
@@ -95,16 +95,18 @@ describe("tips", () => {
     expect([far, close, closeBetterTurnout].sort(compareScores)).toEqual([closeBetterTurnout, close, far])
   })
 
-  it("counts the same miss more for a small list than for a big one", () => {
+  it("counts the same miss more for a small list only in the weighted ranking", () => {
     const actual = { pcts: { 1: 20, 2: 5, 3: 75 }, turnout: 50, winner: null }
     const offAtBig = scoreTip({ shares: { 1: 23, 2: 5, 3: 75 }, turnout: 50, winner: null }, actual)
     const offAtSmall = scoreTip({ shares: { 1: 20, 2: 8, 3: 75 }, turnout: 50, winner: null }, actual)
-    expect(offAtSmall.error / offAtBig.error).toBeCloseTo(2)
+    expect(offAtSmall.error).toBe(offAtBig.error)
+    expect(offAtSmall.weightedError / offAtBig.weightedError).toBeCloseTo(2)
+    expect([offAtSmall, offAtBig].sort(compareWeightedScores)).toEqual([offAtBig, offAtSmall])
   })
 
   it("weights lists with no votes like lists with 1 %", () => {
     const actual = { pcts: { 1: 100, 2: 0 }, turnout: 50, winner: null }
     const score = scoreTip({ shares: { 1: 99, 2: 1 }, turnout: 50, winner: null }, actual)
-    expect(score.error).toBeCloseTo(1)
+    expect(score.weightedError).toBeCloseTo(1)
   })
 })

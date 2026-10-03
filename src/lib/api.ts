@@ -27,6 +27,7 @@ export interface LeaderboardRow extends Tip {
   nickname: string
   mine: boolean
   error: number
+  weightedError: number
   turnoutError: number
   winnerHit: boolean | null
 }
@@ -47,7 +48,11 @@ export interface RaceDetail {
   tipCount: number
   myTip: Tip | null
   myRank: number | null
+  myWeightedRank: number | null
+  /** Main ranking by plain average error. */
   leaderboard: LeaderboardRow[] | null
+  /** Second ranking, where misses on smaller lists count more. */
+  weightedLeaderboard: LeaderboardRow[] | null
 }
 
 export async function api<T>(path: string, init?: { method?: string; body?: unknown }): Promise<T> {

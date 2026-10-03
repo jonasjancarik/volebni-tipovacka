@@ -7,7 +7,16 @@ import { canonicalEmail } from "./email"
 import { randomNickname } from "./nicknames"
 import { importResults } from "./results"
 import { pragueDay, referrerHost, viewPath } from "./telemetry"
-import { compareScores, expandShares, scoreTip, validateTip, type Scored, type Shares, type TipInput } from "./scoring"
+import {
+  compareScores,
+  compareWeightedScores,
+  expandShares,
+  scoreTip,
+  validateTip,
+  type Scored,
+  type Shares,
+  type TipInput,
+} from "./scoring"
 
 interface Env {
   DB: D1Database
@@ -189,7 +198,9 @@ app.get("/senate", async (c) => {
 
 type TipRow = { user_id: number; nickname: string; turnout: number; shares: string; winner: number | null }
 type Ranked = { row: TipRow; tip: TipInput & { filled: number[] }; score: Scored }
-const standings = new Map<string, { resultsAt: string | null; at: number; ranked: Ranked[] }>()
+/** Both rankings of a race: `ranked` is the main one, `weighted` counts misses on smaller lists more. */
+type Standings = { ranked: Ranked[]; weighted: Ranked[] }
+const standings = new Map<string, Standings & { resultsAt: string | null; at: number }>()
 
 app.get("/races/:id", async (c) => {
   const db = c.env.DB
@@ -222,15 +233,17 @@ app.get("/races/:id", async (c) => {
   let myTip: ReturnType<typeof readTip> | null = null
   let tipCount: number
   let leaderboard: unknown[] | null = null
+  let weightedLeaderboard: unknown[] | null = null
   let myRank: number | null = null
+  let myWeightedRank: number | null = null
 
   if (hasResults) {
     // Ranking happens on read so the standings follow the count. The result is kept for a minute per
     // race, because tips no longer change and a busy race would otherwise be re-read on every view.
     const kept = standings.get(id)
-    let ranked =
-      kept && kept.resultsAt === race.results_at && Date.now() - kept.at < STANDINGS_TTL_MS ? kept.ranked : null
-    if (!ranked) {
+    let current: Standings | null =
+      kept && kept.resultsAt === race.results_at && Date.now() - kept.at < STANDINGS_TTL_MS ? kept : null
+    if (!current) {
       const rows = (
         await db
           .prepare(
@@ -245,24 +258,34 @@ app.get("/races/:id", async (c) => {
         turnout: race.turnout ?? 0,
         winner: race.winner,
       }
-      ranked = rows
+      const ranked = rows
         .map((row) => {
           const tip = readTip(row)
           return { row, tip, score: scoreTip(tip, actual) }
         })
         .sort((a, b) => compareScores(a.score, b.score))
+      const weighted = [...ranked].sort((a, b) => compareWeightedScores(a.score, b.score))
+      current = { ranked, weighted }
       if (standings.size >= STANDINGS_KEPT) standings.clear()
-      standings.set(id, { resultsAt: race.results_at, at: Date.now(), ranked })
+      standings.set(id, { resultsAt: race.results_at, at: Date.now(), ...current })
     }
-    tipCount = ranked.length
-    const mine = ranked.findIndex((r) => r.row.user_id === user?.id)
-    if (mine >= 0) {
-      myRank = mine + 1
-      myTip = ranked[mine].tip
+    tipCount = current.ranked.length
+    const board = (order: Ranked[]) => {
+      const mine = order.findIndex((r) => r.row.user_id === user?.id)
+      const rows = order
+        .map((r, i) => ({ rank: i + 1, nickname: r.row.nickname, mine: i === mine, ...r.tip, ...r.score }))
+        .filter((r) => r.rank <= LEADERBOARD_SIZE || r.mine)
+      return { mine, rows }
     }
-    leaderboard = ranked
-      .map((r, i) => ({ rank: i + 1, nickname: r.row.nickname, mine: i === mine, ...r.tip, ...r.score }))
-      .filter((r) => r.rank <= LEADERBOARD_SIZE || r.mine)
+    const main = board(current.ranked)
+    const second = board(current.weighted)
+    if (main.mine >= 0) {
+      myRank = main.mine + 1
+      myWeightedRank = second.mine + 1
+      myTip = current.ranked[main.mine].tip
+    }
+    leaderboard = main.rows
+    weightedLeaderboard = second.rows
   } else {
     tipCount = (await db.prepare("SELECT COUNT(*) AS n FROM tips WHERE race_id = ?").bind(id).first<{ n: number }>())!.n
     if (user) {
@@ -290,7 +313,9 @@ app.get("/races/:id", async (c) => {
     tipCount,
     myTip,
     myRank,
+    myWeightedRank,
     leaderboard,
+    weightedLeaderboard,
   })
 })
 

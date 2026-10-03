@@ -434,7 +434,11 @@ function TipForm({ data, onSaved }: { data: RaceDetail; onSaved: () => void }) {
 }
 
 function Results({ data }: { data: RaceDetail }) {
-  const { race, options, myTip, leaderboard, myRank } = data
+  const [ranking, setRanking] = useState<"plain" | "weighted">("plain")
+  const weighted = ranking === "weighted"
+  const { race, options, myTip } = data
+  const leaderboard = weighted ? data.weightedLeaderboard : data.leaderboard
+  const myRank = weighted ? data.myWeightedRank : data.myRank
   const counted = race.countedPct !== null
   const sorted = counted ? [...options].sort((a, b) => (b.pct ?? 0) - (a.pct ?? 0)) : options
   const winnerName = options.find((o) => o.num === race.winner)?.name
@@ -509,16 +513,36 @@ function Results({ data }: { data: RaceDetail }) {
             <p className="text-sm text-muted-foreground">
               {leaderboard.length === 0
                 ? "Tady nikdo netipoval."
-                : `${race.final ? "" : "Průběžné pořadí, mění se se sčítáním. "}Odchylka říká, o kolik procentních bodů se tip v průměru spletl. Omyly u menších listin se počítají víc.${myRank ? ` Jste na ${myRank}. místě.` : ""}`}
+                : [
+                    race.final ? "" : "Průběžné pořadí, mění se se sčítáním.",
+                    weighted
+                      ? "Vážená odchylka počítá omyly u menších listin víc: splést se o 3 body u listiny s 5 % je tu dvakrát horší než u listiny s 20 %."
+                      : "Odchylka říká, o kolik procentních bodů se tip v průměru spletl.",
+                    myRank ? `Jste na ${myRank}. místě.` : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
             </p>
           </div>
+          {leaderboard.length > 0 && (
+            <ToggleGroup
+              variant="outline"
+              size="sm"
+              value={[ranking]}
+              onValueChange={(v) => v[0] && setRanking(v[0] as "plain" | "weighted")}
+              aria-label="Způsob vyhodnocení"
+            >
+              <ToggleGroupItem value="plain">Hlavní pořadí</ToggleGroupItem>
+              <ToggleGroupItem value="weighted">Vážené pořadí</ToggleGroupItem>
+            </ToggleGroup>
+          )}
           {leaderboard.length > 0 && (
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-10">#</TableHead>
                   <TableHead>Přezdívka</TableHead>
-                  <TableHead className="text-right">Odchylka</TableHead>
+                  <TableHead className="text-right">{weighted ? "Vážená odchylka" : "Odchylka"}</TableHead>
                   <TableHead className="text-right">Tip účasti</TableHead>
                   {race.kind === "se" && race.winner !== null && <TableHead className="text-right">Vítěz</TableHead>}
                 </TableRow>
@@ -532,7 +556,11 @@ function Results({ data }: { data: RaceDetail }) {
                       {row.mine && " (vy)"}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
-                      {row.error.toLocaleString("cs-CZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} p. b.
+                      {(weighted ? row.weightedError : row.error).toLocaleString("cs-CZ", {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}{" "}
+                      p. b.
                     </TableCell>
                     <TableCell className="text-right tabular-nums">{pct(row.turnout)}</TableCell>
                     {race.kind === "se" && race.winner !== null && (
