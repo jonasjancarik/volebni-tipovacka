@@ -5,6 +5,7 @@ import { HTTPException } from "hono/http-exception"
 import { secureHeaders } from "hono/secure-headers"
 import { canonicalEmail } from "./email"
 import { randomNickname } from "./nicknames"
+import { buildResultEmail, type RacePlacing } from "./result-email"
 import { importResults } from "./results"
 import { pragueDay, referrerHost, viewPath } from "./telemetry"
 import {
@@ -27,9 +28,11 @@ interface Env {
   RESULTS_BASE_URL: string
   RESULTS_BATCH: string
   MAIL_FROM: string
+  /** Address of the site, for links in e-mails sent by the scheduled job. */
+  SITE_URL: string
   TURNSTILE_SITE_KEY: string
   TURNSTILE_SECRET?: string
-  /** Secret key for hashing e-mail addresses; the addresses themselves are never stored. */
+  /** Secret key for hashing e-mail addresses. An address itself is kept only for a tipper who asked for the result e-mail. */
   EMAIL_HASH_KEY: string
   DEV_MODE?: string
 }
@@ -38,6 +41,8 @@ interface User {
   id: number
   email_hash: string
   nickname: string
+  /** 1 while the address is kept because the tipper asked to be e-mailed their result. */
+  notify: number
 }
 
 interface Race {
@@ -61,6 +66,9 @@ const HOURLY_EMAILS = 5
 const PENDING_LINKS = 10
 const STANDINGS_TTL_MS = 60_000
 const STANDINGS_KEPT = 20
+/** Result e-mails sent per scheduled run. */
+const RESULT_EMAILS_BATCH = 5
+const USER_COLUMNS = "id, email_hash, nickname, notify_email IS NOT NULL AS notify"
 
 type AppEnv = { Bindings: Env; Variables: { user: User | null } }
 type Ctx = Context<AppEnv>
@@ -141,7 +149,7 @@ app.use("*", async (c, next) => {
   const sid = getCookie(c, "sid")
   const user = sid
     ? await c.env.DB.prepare(
-        `SELECT u.id, u.email_hash, u.nickname FROM sessions s JOIN users u ON u.id = s.user_id
+        `SELECT u.id, u.email_hash, u.nickname, u.notify_email IS NOT NULL AS notify FROM sessions s JOIN users u ON u.id = s.user_id
          WHERE s.token_hash = ? AND s.expires_at > ?`
       )
         .bind(await sha256(sid), new Date().toISOString())
@@ -163,7 +171,7 @@ app.get("/config", (c) => {
     deadline: c.env.DEADLINE,
     open: isOpen(c.env),
     turnstileSiteKey: c.env.TURNSTILE_SITE_KEY,
-    me: user && { nickname: user.nickname },
+    me: user && { nickname: user.nickname, resultEmail: user.notify === 1 },
   })
 })
 
@@ -197,10 +205,61 @@ app.get("/senate", async (c) => {
 })
 
 type TipRow = { user_id: number; nickname: string; turnout: number; shares: string; winner: number | null }
+type StoredTip = { turnout: number; shares: string; winner: number | null }
 type Ranked = { row: TipRow; tip: TipInput & { filled: number[] }; score: Scored }
 /** Both rankings of a race: `ranked` is the main one, `weighted` counts misses on smaller lists more. */
 type Standings = { ranked: Ranked[]; weighted: Ranked[] }
 const standings = new Map<string, Standings & { resultsAt: string | null; at: number }>()
+
+/** Stored tips hold only the filled-in shares; `filled` lets the form show which ones those were. */
+function readTip(row: StoredTip, nums: number[]) {
+  const filled = JSON.parse(row.shares) as Shares
+  return {
+    turnout: row.turnout,
+    shares: expandShares(filled, nums),
+    winner: row.winner,
+    filled: Object.keys(filled).map(Number),
+  }
+}
+
+/**
+ * Ranks every tip of a race against its results. Ranking happens on read so the standings follow the
+ * count. The result is kept for a minute per race, because tips no longer change and a busy race would
+ * otherwise be re-read on every view.
+ */
+async function raceStandings(
+  db: D1Database,
+  race: Race,
+  options: { num: number; pct: number | null }[]
+): Promise<Standings> {
+  const kept = standings.get(race.id)
+  if (kept && kept.resultsAt === race.results_at && Date.now() - kept.at < STANDINGS_TTL_MS) return kept
+  const rows = (
+    await db
+      .prepare(
+        `SELECT t.user_id, u.nickname, t.turnout, t.shares, t.winner
+         FROM tips t JOIN users u ON u.id = t.user_id WHERE t.race_id = ?`
+      )
+      .bind(race.id)
+      .all<TipRow>()
+  ).results
+  const nums = options.map((o) => o.num)
+  const actual = {
+    pcts: Object.fromEntries(options.map((o) => [String(o.num), o.pct])),
+    turnout: race.turnout ?? 0,
+    winner: race.winner,
+  }
+  const ranked = rows
+    .map((row) => {
+      const tip = readTip(row, nums)
+      return { row, tip, score: scoreTip(tip, actual) }
+    })
+    .sort((a, b) => compareScores(a.score, b.score))
+  const current = { ranked, weighted: [...ranked].sort((a, b) => compareWeightedScores(a.score, b.score)) }
+  if (standings.size >= STANDINGS_KEPT) standings.clear()
+  standings.set(race.id, { resultsAt: race.results_at, at: Date.now(), ...current })
+  return current
+}
 
 app.get("/races/:id", async (c) => {
   const db = c.env.DB
@@ -220,16 +279,6 @@ app.get("/races/:id", async (c) => {
   const hasResults = !open && (race.counted_pct ?? 0) > 0
 
   const nums = options.map((o) => o.num)
-  // Stored tips hold only the filled-in shares; `filled` lets the form show which ones those were.
-  const readTip = (row: { turnout: number; shares: string; winner: number | null }) => {
-    const filled = JSON.parse(row.shares) as Shares
-    return {
-      turnout: row.turnout,
-      shares: expandShares(filled, nums),
-      winner: row.winner,
-      filled: Object.keys(filled).map(Number),
-    }
-  }
   let myTip: ReturnType<typeof readTip> | null = null
   let tipCount: number
   let leaderboard: unknown[] | null = null
@@ -238,37 +287,7 @@ app.get("/races/:id", async (c) => {
   let myWeightedRank: number | null = null
 
   if (hasResults) {
-    // Ranking happens on read so the standings follow the count. The result is kept for a minute per
-    // race, because tips no longer change and a busy race would otherwise be re-read on every view.
-    const kept = standings.get(id)
-    let current: Standings | null =
-      kept && kept.resultsAt === race.results_at && Date.now() - kept.at < STANDINGS_TTL_MS ? kept : null
-    if (!current) {
-      const rows = (
-        await db
-          .prepare(
-            `SELECT t.user_id, u.nickname, t.turnout, t.shares, t.winner
-             FROM tips t JOIN users u ON u.id = t.user_id WHERE t.race_id = ?`
-          )
-          .bind(id)
-          .all<TipRow>()
-      ).results
-      const actual = {
-        pcts: Object.fromEntries(options.map((o) => [String(o.num), o.pct])),
-        turnout: race.turnout ?? 0,
-        winner: race.winner,
-      }
-      const ranked = rows
-        .map((row) => {
-          const tip = readTip(row)
-          return { row, tip, score: scoreTip(tip, actual) }
-        })
-        .sort((a, b) => compareScores(a.score, b.score))
-      const weighted = [...ranked].sort((a, b) => compareWeightedScores(a.score, b.score))
-      current = { ranked, weighted }
-      if (standings.size >= STANDINGS_KEPT) standings.clear()
-      standings.set(id, { resultsAt: race.results_at, at: Date.now(), ...current })
-    }
+    const current = await raceStandings(db, race, options)
     tipCount = current.ranked.length
     const board = (order: Ranked[]) => {
       const mine = order.findIndex((r) => r.row.user_id === user?.id)
@@ -292,8 +311,8 @@ app.get("/races/:id", async (c) => {
       const row = await db
         .prepare("SELECT turnout, shares, winner FROM tips WHERE user_id = ? AND race_id = ?")
         .bind(user.id, id)
-        .first<{ turnout: number; shares: string; winner: number | null }>()
-      if (row) myTip = readTip(row)
+        .first<StoredTip>()
+      if (row) myTip = readTip(row, nums)
     }
   }
 
@@ -354,7 +373,9 @@ async function sendLink(
   c: Ctx,
   email: string,
   payload: { raceId: string; raceName: string; tip: TipInput } | null,
-  delivery: "wait" | "background" | "none" = "wait"
+  delivery: "wait" | "background" | "none" = "wait",
+  /** Set when the tipper asked for the result e-mail; the address then waits on the link until it is confirmed. */
+  notify = false
 ): Promise<{ error?: string; devLink?: string }> {
   const env = c.env
   const ip = c.req.header("cf-connecting-ip") ?? "local"
@@ -394,7 +415,7 @@ async function sendLink(
   const token = randomToken()
   const now = Date.now()
   await env.DB.prepare(
-    "INSERT INTO magic_links (token_hash, email_hash, nickname, payload, ip_hash, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+    "INSERT INTO magic_links (token_hash, email_hash, nickname, payload, ip_hash, created_at, expires_at, notify_email) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
   )
     .bind(
       await sha256(token),
@@ -403,7 +424,8 @@ async function sendLink(
       payload && JSON.stringify(payload),
       ipHash,
       new Date(now).toISOString(),
-      new Date(now + (delivery === "none" ? 1 : LINK_HOURS) * 3600_000).toISOString()
+      new Date(now + (delivery === "none" ? 1 : LINK_HOURS) * 3600_000).toISOString(),
+      notify && delivery !== "none" ? email : null
     )
     .run()
   if (delivery === "none" || !nickname) return {}
@@ -513,7 +535,7 @@ app.post("/tips", async (c) => {
   if (!email) return c.json({ error: "Zadejte platnou e-mailovou adresu." }, 400)
   if (!(await verifyTurnstile(c, body.turnstileToken)))
     return c.json({ error: "Nepodařilo se ověřit, že nejste robot. Zkuste to prosím znovu." }, 400)
-  const sent = await sendLink(c, email, { raceId, raceName: race.name, tip })
+  const sent = await sendLink(c, email, { raceId, raceName: race.name, tip }, "wait", body.resultEmail === true)
   if (sent.error) return c.json({ error: sent.error }, 429)
   return c.json({ emailSent: true, devLink: sent.devLink })
 })
@@ -547,25 +569,36 @@ app.post("/confirm", async (c) => {
   // Expiring the row instead of deleting it keeps it counted in the hourly e-mail limit.
   const link = await db
     .prepare(
-      "UPDATE magic_links SET expires_at = ?1 WHERE token_hash = ?2 AND expires_at > ?1 RETURNING email_hash, nickname, payload"
+      "UPDATE magic_links SET expires_at = ?1 WHERE token_hash = ?2 AND expires_at > ?1 RETURNING token_hash, email_hash, nickname, payload, notify_email"
     )
     .bind(now, await sha256(String(body.token ?? "")))
-    .first<{ email_hash: string; nickname: string | null; payload: string | null }>()
+    .first<{
+      token_hash: string
+      email_hash: string
+      nickname: string | null
+      payload: string | null
+      notify_email: string | null
+    }>()
   if (!link) return invalid()
 
   let user = await db
-    .prepare("SELECT id, email_hash, nickname FROM users WHERE email_hash = ?")
+    .prepare(`SELECT ${USER_COLUMNS} FROM users WHERE email_hash = ?`)
     .bind(link.email_hash)
     .first<User>()
   if (!user) {
     if (!link.nickname) return invalid()
     user = (await db
-      .prepare(
-        "INSERT INTO users (email_hash, nickname, created_at) VALUES (?, ?, ?) RETURNING id, email_hash, nickname"
-      )
+      .prepare(`INSERT INTO users (email_hash, nickname, created_at) VALUES (?, ?, ?) RETURNING ${USER_COLUMNS}`)
       .bind(link.email_hash, link.nickname, now)
       .first<User>())!
   }
+
+  // The address moves from the used link to the account, so it never stays in two places.
+  if (link.notify_email)
+    await db.batch([
+      db.prepare("UPDATE users SET notify_email = ? WHERE id = ?").bind(link.notify_email, user.id),
+      db.prepare("UPDATE magic_links SET notify_email = NULL WHERE token_hash = ?").bind(link.token_hash),
+    ])
 
   const sid = randomToken()
   await db
@@ -607,6 +640,28 @@ app.get("/me/tips", async (c) => {
     .bind(user.id)
     .all()
   return c.json(results)
+})
+
+// A signed-in tipper has to type the address again, because only its hash is known. It must be the
+// address of their own account, so nobody can sign up somebody else for the e-mail.
+app.post("/me/result-email", async (c) => {
+  const user = c.var.user
+  if (!user) return c.json({ error: "Nejste přihlášeni." }, 401)
+  if (Date.now() > Date.parse(c.env.RESULTS_UNTIL))
+    return c.json({ error: "Výsledky jsme už rozeslali, další e-maily neposíláme." }, 403)
+  const body = await c.req.json<Record<string, unknown>>().catch(() => ({}) as Record<string, unknown>)
+  const email = cleanEmail(body.email)
+  if (!email || (await accountHash(c.env, email)) !== user.email_hash)
+    return c.json({ error: "Zadejte adresu, kterou se do tipovačky přihlašujete." }, 400)
+  await c.env.DB.prepare("UPDATE users SET notify_email = ? WHERE id = ?").bind(email, user.id).run()
+  return c.json({ ok: true })
+})
+
+app.delete("/me/result-email", async (c) => {
+  const user = c.var.user
+  if (!user) return c.json({ error: "Nejste přihlášeni." }, 401)
+  await c.env.DB.prepare("UPDATE users SET notify_email = NULL WHERE id = ?").bind(user.id).run()
+  return c.json({ ok: true })
 })
 
 app.delete("/me", async (c) => {
@@ -652,10 +707,85 @@ async function purgeExpired(db: D1Database) {
   ])
 }
 
+/**
+ * E-mails their placing to tippers who asked for it, once every race they tipped is fully counted, and
+ * forgets their address. The address is cleared before the e-mail leaves, so a failed send is not retried
+ * and nobody can get the same e-mail twice. When the counting window closes, any address still kept is cleared.
+ */
+async function sendResultEmails(env: Env): Promise<string> {
+  const db = env.DB
+  if (Date.now() < Date.parse(env.POLLS_CLOSE)) return "polls still open"
+  if (Date.now() > Date.parse(env.RESULTS_UNTIL)) {
+    const cleared = await db.prepare("UPDATE users SET notify_email = NULL WHERE notify_email IS NOT NULL").run()
+    return `cleared ${cleared.meta.changes} leftover addresses`
+  }
+  const due = (
+    await db
+      .prepare(
+        `SELECT u.id, u.nickname, u.notify_email AS email FROM users u
+         WHERE u.notify_email IS NOT NULL
+           AND EXISTS (SELECT 1 FROM tips t WHERE t.user_id = u.id)
+           AND NOT EXISTS (SELECT 1 FROM tips t JOIN races r ON r.id = t.race_id WHERE t.user_id = u.id AND r.final = 0)
+         LIMIT ?`
+      )
+      .bind(RESULT_EMAILS_BATCH)
+      .all<{ id: number; nickname: string; email: string }>()
+  ).results
+  let sent = 0
+  for (const user of due) {
+    const races = (
+      await db
+        .prepare("SELECT r.* FROM tips t JOIN races r ON r.id = t.race_id WHERE t.user_id = ? ORDER BY r.name")
+        .bind(user.id)
+        .all<Race>()
+    ).results
+    const placings: RacePlacing[] = []
+    for (const race of races) {
+      const options = (
+        await db
+          .prepare("SELECT num, pct FROM options WHERE race_id = ?")
+          .bind(race.id)
+          .all<{ num: number; pct: number | null }>()
+      ).results
+      const { ranked, weighted } = await raceStandings(db, race, options)
+      const mine = ranked.findIndex((r) => r.row.user_id === user.id)
+      if (mine < 0) continue
+      placings.push({
+        id: race.id,
+        name: race.name,
+        tips: ranked.length,
+        rank: mine + 1,
+        error: ranked[mine].score.error,
+        weightedRank: weighted.findIndex((r) => r.row.user_id === user.id) + 1,
+        weightedError: ranked[mine].score.weightedError,
+      })
+    }
+    const claimed = await db
+      .prepare("UPDATE users SET notify_email = NULL WHERE id = ? AND notify_email = ?")
+      .bind(user.id, user.email)
+      .run()
+    if (!claimed.meta.changes || !placings.length) continue
+    const mail = buildResultEmail(user.nickname, env.SITE_URL, placings)
+    if (!env.EMAIL || !env.MAIL_FROM) {
+      console.log(`Result e-mail for ${user.nickname}:\n${mail.text}`)
+      continue
+    }
+    try {
+      await env.EMAIL.send({ to: user.email, from: { email: env.MAIL_FROM, name: "Volební tipovačka" }, ...mail })
+      sent++
+    } catch (err) {
+      // The address must not reach the logs, and a provider's error message may quote it.
+      console.error(`Result e-mail could not be sent: ${String(err).replaceAll(user.email, "<address>")}`)
+    }
+  }
+  return `${sent} of ${due.length} sent`
+}
+
 export default {
   fetch: app.fetch,
   async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(importResults(env).then((summary) => console.log(`results import: ${summary}`)))
     ctx.waitUntil(purgeExpired(env.DB))
+    ctx.waitUntil(sendResultEmails(env).then((summary) => console.log(`result e-mails: ${summary}`)))
   },
 } satisfies ExportedHandler<Env>

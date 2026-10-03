@@ -8,6 +8,7 @@ import { Turnstile } from "@/components/turnstile"
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Field, FieldDescription, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { InputGroup, InputGroupAddon, InputGroupInput, InputGroupText } from "@/components/ui/input-group"
@@ -104,6 +105,7 @@ function TipForm({ data, onSaved }: { data: RaceDetail; onSaved: () => void }) {
     setRestored(false)
   }
   const [email, setEmail] = useState("")
+  const [resultEmail, setResultEmail] = useState(false)
   const [sort, setSort] = useState<"num" | "name">("num")
   const [dragMode, setDragMode] = useState(false)
   const [token, setToken] = useState("")
@@ -195,6 +197,7 @@ function TipForm({ data, onSaved }: { data: RaceDetail; onSaved: () => void }) {
           turnout: toNumber(turnout),
           winner: isSenate ? Number(winner) : null,
           email,
+          resultEmail,
           turnstileToken: token,
         },
       })
@@ -394,6 +397,16 @@ function TipForm({ data, onSaved }: { data: RaceDetail; onSaved: () => void }) {
                 Pošleme vám odkaz, kterým tip potvrdíte. Adresu si neukládáme, jen její otisk, podle kterého vás příště
                 poznáme.
               </FieldDescription>
+            </Field>
+            <Field orientation="horizontal">
+              <Checkbox id="result-email" checked={resultEmail} onCheckedChange={setResultEmail} />
+              <div className="flex flex-col gap-1">
+                <FieldLabel htmlFor="result-email">Pošlete mi po sečtení hlasů e-mail s mým umístěním</FieldLabel>
+                <FieldDescription>
+                  Jen v tomhle případě si adresu uložíme. Po volbách ji smažeme a zůstane nám pouze její kryptografický
+                  otisk.
+                </FieldDescription>
+              </div>
             </Field>
             {config?.turnstileSiteKey && (
               <div id="captcha" tabIndex={-1} className="outline-none">

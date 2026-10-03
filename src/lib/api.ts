@@ -2,7 +2,8 @@ export interface Config {
   deadline: string
   open: boolean
   turnstileSiteKey: string
-  me: { nickname: string } | null
+  /** `resultEmail` is true when the tipper asked to be e-mailed their placing after the count. */
+  me: { nickname: string; resultEmail: boolean } | null
 }
 
 export interface RaceSummary {

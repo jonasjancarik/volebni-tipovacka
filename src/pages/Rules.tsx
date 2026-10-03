@@ -62,6 +62,12 @@ export function Rules() {
           všech tipů můžete kdykoli smazat na stránce Moje tipy.
         </p>
         <p>
+          Výjimkou je, když si při tipování zaškrtnete, že chcete po sečtení hlasů dostat e-mail se svým umístěním v
+          hlavním i váženém pořadí. Jen tehdy si adresu uložíme. Jakmile vám výsledek pošleme, adresu smažeme a zůstane
+          nám zase pouze její kryptografický otisk. Nejpozději ji smažeme devět dní po volbách, i kdyby se e-mail
+          odeslat nepodařilo. Rozmyslet si to můžete kdykoli na stránce Moje tipy, kde jde zasílání zapnout i vypnout.
+        </p>
+        <p>
           Návštěvnost měříme bez cookies a bez sledování jednotlivých lidí. Počítáme jen, kolikrát se která stránka za
           den zobrazila a z jakého webu na ni lidé přišli. Vaši IP adresu ani nic o vašem prohlížeči si k tomu
           neukládáme, a proto se vás neptáme na souhlas. Jediná cookie, kterou používáme, vás po potvrzení tipu drží

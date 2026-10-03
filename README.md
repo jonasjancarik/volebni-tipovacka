@@ -24,6 +24,11 @@ se výsledky stahují z otevřených dat ČSÚ a u každé obce vzniká pořadí
   při shodě rozhoduje odhad účasti (`worker/scoring.ts`). Vedle toho se zveřejňuje
   druhé, vážené pořadí, kde omyl u menší listiny váží víc (váha je 1/√ skutečného výsledku). Spočítané pořadí se minutu drží v paměti.
 
+- **Výsledek e-mailem:** kdo si to při tipu zaškrtne (nebo zapne v Moje tipy), tomu se adresa uloží do
+  `users.notify_email`. Cron po sečtení všech jeho obcí a obvodů pošle jeden e-mail s umístěním v obou
+  pořadích (`worker/result-email.ts`) a adresu před odesláním smaže, takže se neúspěšné odeslání neopakuje.
+  Po `RESULTS_UNTIL` se smažou i zbylé adresy. Odkazy v e-mailu vedou na `SITE_URL`.
+
 - **Návštěvnost:** bez cookies a bez identifikátorů návštěvníků. Stránka po každém zobrazení zavolá
   `POST /api/view` a v tabulce `page_views` se zvýší denní součet pro danou stránku a odkazující web
   (`worker/telemetry.ts`). `visits` počítá zobrazení, kterými návštěva začala. IP adresa ani prohlížeč se
